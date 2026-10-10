@@ -55,6 +55,58 @@ def client_for(api):
     return TestClient(app)
 
 
+def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
+    """The real Agent registration must be discoverable by the separate API module."""
+    api = load_api()
+    package = "hermes_plugin_magi_bridge_integration"
+
+    def load_agent():
+        spec = importlib.util.spec_from_file_location(
+            package, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)],
+        )
+        plugin = importlib.util.module_from_spec(spec)
+        sys.modules[package] = plugin
+        spec.loader.exec_module(plugin)
+        return plugin
+
+    def register_agent(plugin):
+        callbacks = []
+        llm = object()
+        ctx = SimpleNamespace(
+            llm=llm,
+            on_unload=callbacks.append,
+            register_command=lambda *args, **kwargs: None,
+            register_cli_command=lambda *args, **kwargs: None,
+        )
+        plugin.register(ctx)
+        return llm, callbacks
+
+    def unload():
+        for name in tuple(sys.modules):
+            if name == package or name.startswith(package + "."):
+                sys.modules.pop(name)
+
+    try:
+        plugin = load_agent()
+        llm, callbacks = register_agent(plugin)
+        assert api._plugin_llm() is llm
+        assert "_magi_runtime_bridge" not in sys.modules
+        callbacks[0]()
+        with pytest.raises(RuntimeError, match="context is unavailable"):
+            api._plugin_llm()
+
+        unload()
+        plugin = load_agent()
+        replacement, callbacks = register_agent(plugin)
+        assert api._plugin_llm() is replacement
+        callbacks[0]()
+        unload()
+        with pytest.raises(RuntimeError, match="context is unavailable"):
+            api._plugin_llm()
+    finally:
+        unload()
+
+
 def test_unified_desktop_package_uses_documented_surfaces():
     load_api()
     source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")

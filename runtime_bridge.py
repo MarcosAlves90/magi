@@ -9,17 +9,10 @@ constructing a provider client or depending on a chat session.
 
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 
-RUNTIME_BRIDGE_ALIAS = "_magi_runtime_bridge"
 _plugin_context: Any = None
-
-# dashboard/plugin_api.py is imported under a different synthetic package name.
-# A stable process-local alias lets it find this exact module without depending
-# on Hermes' private synthetic module naming scheme.
-sys.modules[RUNTIME_BRIDGE_ALIAS] = sys.modules[__name__]
 
 
 def bind_plugin_context(ctx: Any) -> None:
