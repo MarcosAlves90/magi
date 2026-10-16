@@ -94,6 +94,22 @@ function StatCard({ label, value, detail, tone = 'default' }) {
   })
 }
 
+function CompactStat({ label, value, detail }) {
+  return jsxs('div', {
+    className: 'min-w-0',
+    children: [
+      jsx('div', { className: 'truncate text-[0.625rem] font-medium uppercase tracking-wide text-(--ui-text-tertiary)', children: label }),
+      jsxs('div', {
+        className: 'mt-0.5 flex min-w-0 items-baseline gap-1.5',
+        children: [
+          jsx('span', { className: 'shrink-0 text-sm font-semibold tabular-nums', children: String(value ?? 0) }),
+          detail ? jsx('span', { className: 'min-w-0 truncate text-[0.625rem] text-(--ui-text-quaternary)', children: detail }) : null
+        ]
+      })
+    ]
+  })
+}
+
 function EmptyState({ title, description, action }) {
   return jsxs('div', {
     className: 'flex min-h-40 flex-col items-center justify-center px-6 py-10 text-center',
@@ -851,7 +867,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     className: 'flex h-full min-h-0 flex-col overflow-hidden',
     children: [
       jsxs('header', {
-        className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-4',
+        className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-3',
         children: [
           jsxs('div', {
             className: 'flex flex-wrap items-start gap-3',
@@ -876,17 +892,23 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             ]
           }),
           jsx('div', {
-            className: 'mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4',
+            className: 'mt-2 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-3 py-2 min-[34rem]:grid-cols-4',
             children: [
-              jsx(StatCard, { label: 'Entries', value: targetData.count ?? 0, detail: targetLabel, tone: 'accent' }, 'entries'),
-              jsx(StatCard, { label: 'Characters', value: `${targetData.used_chars ?? 0}`, detail: `of ${targetData.char_limit ?? 0} available` }, 'characters'),
-              jsx(StatCard, { label: 'Estimated tokens', value: `~${targetData.estimated_tokens ?? 0}`, detail: `~${targetData.estimated_token_limit ?? 0} budget · tokens estimated` }, 'tokens'),
+              jsx(CompactStat, { label: 'Entries', value: targetData.count ?? 0, detail: targetLabel }, 'entries'),
+              jsx(CompactStat, { label: 'Characters', value: targetData.used_chars ?? 0, detail: `/ ${targetData.char_limit ?? 0}` }, 'characters'),
+              jsx(CompactStat, { label: 'Estimated tokens', value: `~${targetData.estimated_tokens ?? 0}`, detail: `/ ~${targetData.estimated_token_limit ?? 0} budget · tokens estimated` }, 'tokens'),
               jsxs('div', {
-                className: 'flex min-w-0 flex-col justify-center rounded-lg border border-(--ui-stroke-secondary) px-3 py-2',
+                className: 'min-w-0',
                 children: [
-                  jsx('div', { className: 'mb-2 text-xs font-medium', children: `${targetData.usage_percent ?? 0}% of character budget` }),
-                  jsx(UsageBar, { percent: targetData.usage_percent }),
-                  jsx('div', { className: 'mt-1.5 text-[0.6875rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` })
+                  jsxs('div', {
+                    className: 'flex items-baseline justify-between gap-1',
+                    children: [
+                      jsx('span', { className: 'truncate text-[0.625rem] font-medium uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Character budget' }),
+                      jsx('span', { className: 'shrink-0 text-sm font-semibold tabular-nums', children: `${targetData.usage_percent ?? 0}%` })
+                    ]
+                  }),
+                  jsx('div', { className: 'mt-1', children: jsx(UsageBar, { percent: targetData.usage_percent }) }),
+                  jsx('div', { className: 'mt-1 truncate text-[0.625rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` })
                 ]
               }, 'budget')
             ]
