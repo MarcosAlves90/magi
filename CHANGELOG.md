@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.7.8 — 2026-10-17
+
+- Removed the process-global module alias from the LLM context bridge and
+  resolved the active Agent bridge by its plugin file, rejecting ambiguous or
+  unavailable contexts.
+- Reorganized Stored memory metrics into compact Entries, Estimated tokens,
+  and Characters summaries above a full-width Character budget bar, and
+  consolidated search, Memory/User selection, and actions into one responsive
+  toolbar.
+- Clarified the selected state of both Memory/User and Pending writes/Stored
+  memory switches with a shared visual treatment, distinct hover/focus states,
+  and accessible pressed-state semantics.
+- Added focused regression coverage for the compact layout, navigation,
+  responsive controls, and selection states.
+
 ## 1.7.7 — 2026-10-08
 
 - Closed a compaction race where another Hermes writer could add a memory entry
