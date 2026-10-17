@@ -2,6 +2,17 @@
 
 ## 1.7.8 — 2026-10-17
 
+- Applied Desktop AI compaction through Hermes' public `MemoryStore.apply_batch`
+  without rebinding the private `_mutate` method or depending on `skip_drift`,
+  resolving the Hermes plugin catalog rule 9 review.
+- Kept the preview fingerprint precheck, exact `matched_entry` pins, and native
+  all-or-nothing batch writes for both Memory and User stores. Concurrent
+  additions remain intact, while missing pinned entries reject the batch;
+  full-snapshot revalidation under the lock requires a future Hermes API
+  precondition parameter.
+- Added focused regressions for public-API-only compaction, concurrent add and
+  remove behavior, and disk-backed Hermes transactions, with the original
+  1.7.8 manifest, preview limits, and other plugin capabilities unchanged.
 - Removed the process-global module alias from the LLM context bridge and
   resolved the active Agent bridge by its plugin file, rejecting ambiguous or
   unavailable contexts.
