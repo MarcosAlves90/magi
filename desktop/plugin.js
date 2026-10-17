@@ -144,6 +144,11 @@ function UsageBar({ percent = 0 }) {
   const bounded = Math.max(0, Math.min(100, Number(percent) || 0))
   return jsx('div', {
     className: 'h-1.5 overflow-hidden rounded-full bg-(--chrome-action-hover)',
+    role: 'progressbar',
+    'aria-label': 'Character budget used',
+    'aria-valuemin': 0,
+    'aria-valuemax': 100,
+    'aria-valuenow': bounded,
     children: jsx('div', {
       className: 'h-full rounded-full bg-(--ui-accent) transition-[width] duration-500 ease-out motion-reduce:transition-none',
       style: { width: `${bounded}%` }
@@ -892,23 +897,28 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             ]
           }),
           jsx('div', {
-            className: 'mt-2 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-3 py-2 min-[34rem]:grid-cols-4',
+            className: 'mt-2 rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-3 py-2',
             children: [
-              jsx(CompactStat, { label: 'Entries', value: targetData.count ?? 0, detail: targetLabel }, 'entries'),
-              jsx(CompactStat, { label: 'Characters', value: targetData.used_chars ?? 0, detail: `/ ${targetData.char_limit ?? 0}` }, 'characters'),
-              jsx(CompactStat, { label: 'Estimated tokens', value: `~${targetData.estimated_tokens ?? 0}`, detail: `/ ~${targetData.estimated_token_limit ?? 0} budget · tokens estimated` }, 'tokens'),
+              jsx('div', {
+                className: 'grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3',
+                children: [
+                  jsx(CompactStat, { label: 'Entries', value: targetData.count ?? 0, detail: targetLabel }, 'entries'),
+                  jsx(CompactStat, { label: 'Estimated tokens', value: `~${targetData.estimated_tokens ?? 0}`, detail: `/ ~${targetData.estimated_token_limit ?? 0} budget · tokens estimated` }, 'tokens'),
+                  jsx(CompactStat, { label: 'Characters', value: targetData.used_chars ?? 0, detail: `/ ${targetData.char_limit ?? 0}` }, 'characters')
+                ]
+              }),
               jsxs('div', {
-                className: 'min-w-0',
+                className: 'mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-(--ui-stroke-secondary) pt-2',
                 children: [
                   jsxs('div', {
-                    className: 'flex items-baseline justify-between gap-1',
+                    className: 'flex shrink-0 items-baseline gap-2',
                     children: [
-                      jsx('span', { className: 'truncate text-[0.625rem] font-medium uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Character budget' }),
+                      jsx('span', { className: 'text-[0.625rem] font-medium uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Character budget' }),
                       jsx('span', { className: 'shrink-0 text-sm font-semibold tabular-nums', children: `${targetData.usage_percent ?? 0}%` })
                     ]
                   }),
-                  jsx('div', { className: 'mt-1', children: jsx(UsageBar, { percent: targetData.usage_percent }) }),
-                  jsx('div', { className: 'mt-1 truncate text-[0.625rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` })
+                  jsx('div', { className: 'min-w-20 flex-1', children: jsx(UsageBar, { percent: targetData.usage_percent }) }),
+                  jsx('div', { className: 'shrink-0 text-[0.625rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` })
                 ]
               }, 'budget')
             ]
@@ -919,14 +929,25 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
         className: 'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
         children: [
           jsx('div', {
-            className: 'flex gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
+            className: 'min-w-48 flex-1',
+            children: jsx(SearchBox, {
+              value: search,
+              onChange: event => setSearch(event.target.value),
+              placeholder: `Search ${targetLabel}`,
+              ariaLabel: 'Search stored memory'
+            })
+          }),
+          jsx('div', {
+            role: 'group',
+            'aria-label': 'Stored memory target',
+            className: 'flex shrink-0 gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
             children: STORED_TARGETS.map(([id, label]) =>
               jsx('button', {
                 type: 'button',
                 disabled: compacting || applyingCompaction || saving || deleting,
                 onClick: () => selectTarget(id),
                 'aria-pressed': target === id,
-                className: `rounded-md px-3 py-1.5 text-xs ${CONTROL_TRANSITION} ${
+                className: `rounded-md px-3 py-1.5 text-xs focus-visible:outline-2 focus-visible:outline-(--ui-accent) ${CONTROL_TRANSITION} ${
                   target === id
                     ? 'bg-(--ui-bg-primary,transparent) font-medium text-(--ui-text-primary)'
                     : 'text-(--ui-text-tertiary) hover:text-(--ui-text-primary)'
@@ -935,16 +956,17 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               }, id)
             )
           }),
-          jsx('span', { className: 'min-w-2 flex-1' }),
           jsx(ActionButton, {
             disabled: compacting || applyingCompaction || saving || deleting,
             onClick: beginAdd,
+            className: 'focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
             children: 'Add entry'
           }),
           jsx(ActionButton, {
             tone: 'primary',
             disabled: compacting || applyingCompaction || saving || deleting || !targetData.count,
             onClick: compact,
+            className: 'focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
             children: compacting ? 'Compacting…' : 'Compact with AI'
           })
         ]
@@ -1065,19 +1087,15 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             className: 'flex min-h-0 flex-col border-b border-(--ui-stroke-secondary) md:border-b-0 md:border-r',
             children: [
               jsxs('div', {
-                className: 'p-3',
+                className: 'px-3 py-2',
                 children: [
-                  jsx(SearchBox, {
-                    value: search,
-                    onChange: event => setSearch(event.target.value),
-                    placeholder: `Search ${targetLabel}`,
-                    ariaLabel: 'Search stored memory'
-                  }),
                   jsx('div', {
-                    className: 'mt-2 flex items-center justify-between text-[0.6875rem] text-(--ui-text-quaternary)',
+                    className: 'flex items-center justify-between gap-2 text-[0.6875rem] text-(--ui-text-quaternary)',
+                    'aria-live': 'polite',
+                    'aria-atomic': 'true',
                     children: [
                       jsx('span', { children: query ? `${filtered.length} of ${entries.length} shown` : `${entries.length} entries` }),
-                      query ? jsx('button', { type: 'button', onClick: () => setSearch(''), className: 'hover:text-(--ui-text-primary)', children: 'Clear' }) : null
+                      query ? jsx('button', { type: 'button', onClick: () => setSearch(''), className: 'rounded focus-visible:outline-2 focus-visible:outline-(--ui-accent) hover:text-(--ui-text-primary)', children: 'Clear' }) : null
                     ]
                   })
                 ]

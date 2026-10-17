@@ -1,0 +1,215 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "feat(desktop): align stored memory metrics and actions"
+  },
+  "scope": {
+    "allowed_paths": [
+      "desktop/plugin.js",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Rearrange Stored memory metrics into three values on the first row and a character-budget bar on the second, and combine search, target switcher, and Add/Compact actions into a responsive toolbar.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Show Entries, Estimated tokens, Characters in that order in the first statistics row; show Character budget, percentage, bar and remaining free-character feedback across the second row."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Place Search stored memory, Memory/User target switch, Add entry and Compact with AI in the same toolbar beside the list; remove the old extra controls row and search-field row."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Toolbar and statistics remain accessible at narrow widths with no horizontal overflow; preserve names, aria-pressed, focus visibility, status feedback, selected target and loading/disabled states."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Keep all underlying memory operations, REST contracts, compaction preview/apply flow, selection/filtering and resize behavior unchanged; update only Desktop UI and scoped tests."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "A regression test checks a three-item statistic row ordered Entries/Estimated tokens/Characters followed by a separate full-width budget row preserving progress and free-character indicators.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "A regression test verifies the single combined toolbar contains the existing search, target group and Add/Compact actions, with the sidebar containing only the filter summary/list.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Regression tests verify responsive wrapping, accessible group and button state, input labels and focus indicators.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Original operations and tests remain intact; strict POLIS gates and Hermes validation pass, with visual inspection when available.",
+        "requirements": [
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No backend, endpoint, model or memory persistence changes."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Search filter, target switch resets, Add entry, compaction preview and Apply remain wired to their existing handlers and disabled rules."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Hermes theme classes and React plugin SDK remain the UI primitives; no new production dependencies."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Statistics appear as four equal columns or character budget is squeezed next to three data items at Desktop widths."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Search input is separated from selector/action buttons in another panel on desktop."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "Narrow window creates horizontally clipped controls, inaccessible switcher or unreadable budget feedback."
+      },
+      {
+        "id": "FORBID-4",
+        "statement": "Other views, backend memory mutations or profile settings change."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Clean Magi main branch at 6b8090901aa241f3727de9aa3d8bec1eda2eed53; existing StoredMemoryPage and tests."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Responsive two-row statistics and combined toolbar in desktop/plugin.js."
+      },
+      {
+        "id": "OUT-2",
+        "statement": "Focused tests and POLIS v6 Red/Green proof and package."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Unknown metrics keep existing zero defaults; free characters clamp at zero; disabled controls stay disabled during operations."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "Regression, accessibility or validation failure blocks commit and installation."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "6b8090901aa241f3727de9aa3d8bec1eda2eed53",
+    "base_tree": "f327d13faeb75978b33d35fb335df87cfd0bf794",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "24fd96ab957210ab2bd692453c1cd72cffb9b4f63741d0c650bf46b83eb555b0"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_stored_memory_layout_groups_metrics_and_toolbar"
+    ]
+  }
+}
