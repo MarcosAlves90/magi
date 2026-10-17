@@ -14,6 +14,13 @@
   and accessible pressed-state semantics.
 - Added focused regression coverage for the compact layout, navigation,
   responsive controls, and selection states.
+- Renamed the visible workspace heading to **Magi Workspace**, added a small
+  decorative wand icon to **Compact with AI**, and updated the README with the
+  current version and separate Pending writes / Stored memory screenshots.
+- Removed six generated POLIS `.polis` delivery packages from Git tracking and
+  ignored future packages across the repository, while keeping the POLIS
+  retention configuration, contracts, plans, proofs, and validation evidence
+  available for version control without rewriting published history.
 
 ## 1.7.7 — 2026-10-08
 
