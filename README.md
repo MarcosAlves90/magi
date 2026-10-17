@@ -2,6 +2,8 @@
 
 Magi is a Hermes plugin for reviewing pending memory writes and managing the built-in `MEMORY.md` and `USER.md` stores in Hermes Desktop. Requires Hermes `>=0.21.5`.
 
+**Current version:** 1.7.8
+
 ![Magi cover banner](docs/magi-cover-banner.png)
 
 ## Install
@@ -15,7 +17,13 @@ In Hermes Desktop, go to **Capabilities → Plugins** and enable both the **Agen
 
 ## Use Magi in Desktop
 
-![Magi memory review dashboard](docs/screenshots/magi-dashboard.png)
+### Pending writes
+
+![Magi Pending writes: review queue, proposal details, and approval controls](docs/screenshots/pending-writes.png)
+
+### Stored memory
+
+![Magi Stored memory: memory budget, entry list, and editing controls](docs/screenshots/stored-memory.png)
 
 - **Pending writes:** Review each proposal using **Overview**, **Proposal**, **Diff**, **Raw**, or **Verify**, then approve or reject it. Bulk actions require confirmation. Proposals targeting entries that no longer exist are marked obsolete and can be removed with **Delete obsolete**.
 - **Stored memory:** Switch between **Memory** (`MEMORY.md`) and **User** (`USER.md`). Search entries, inspect usage and remaining capacity, and add or edit entries. Deletion requires confirmation.

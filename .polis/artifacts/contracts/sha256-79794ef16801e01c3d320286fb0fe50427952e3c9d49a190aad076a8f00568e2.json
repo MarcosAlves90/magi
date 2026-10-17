@@ -1,0 +1,222 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "docs(desktop): update Magi 1.7.8 workspace and screenshots"
+  },
+  "scope": {
+    "allowed_paths": [
+      "desktop/plugin.js",
+      "tests/test_desktop.py",
+      "README.md",
+      "docs/screenshots/pending-writes.png",
+      "docs/screenshots/stored-memory.png"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Update Magi 1.7.8 UI title and compaction button icon; replace the README dashboard screenshot with the two supplied authentic PNGs and display the release version, preserving behavior and history.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Rename visible Memory workspace label to Magi workspace in MagiPage; leave navigation, descriptions and other UI untouched."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Add a small accessible decorative wand icon to Compact with AI, preserving its exact labels, click handler, disabled rules, focus state and compact toolbar."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Copy the two supplied screenshots verbatim under docs/screenshots/ and refer to them in README with distinct accessible alt text and consistent Markdown image display; remove only the old screenshot reference from README."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Show current Magi version 1.7.8 in README and keep plugin.yaml, changelog, previous commits, Hermes profiles and older version history unchanged."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Regression confirms Magi workspace replaces old visible title and existing navigation selectors are unchanged.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Regression confirms decorative 14px wand SVG, hidden from screen readers, beside unchanged Compact with AI/Compacting label, handler and disabled gate.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Regression checks README two distinct relative image paths with descriptive alternatives, PNG signatures and identical image dimensions.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Regression confirms README release version equals manifest 1.7.8; source history preserved and scoped checks pass.",
+        "requirements": [
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No backend, router, service, compaction logic, memory data, manifest, changelog, or other UI changes."
+      },
+      {
+        "id": "INV-2",
+        "statement": "The existing search, compact metrics, selectors and Add entry/Compact actions preserve layout and behavior."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Screenshot bytes are identical to user-supplied local PNGs, with no new runtime dependencies."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "The Compact with AI button loses its click, keyboard focus, disabled state, accessible text, or label during compaction."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "README references missing or external screenshot paths or claims a version other than 1.7.8."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "Published git history is rewritten, remote push forced, or flow/mariupol installation mutated."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Clean Magi main at 2fe0f12add83d81012d97b141113cb408ad36962 with 1.7.8 manifest."
+      },
+      {
+        "id": "IN-2",
+        "statement": "User supplied 1414x994 pending-writes.png and stored-memory.png local screenshots."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Updated Desktop label and accessible wand icon."
+      },
+      {
+        "id": "OUT-2",
+        "statement": "README containing 1.7.8 and two versioned screenshots."
+      },
+      {
+        "id": "OUT-3",
+        "statement": "Focused regressions, validation evidence and published commit."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If screenshots are unavailable, complete the independent title/icon/version edits and report the missing images exactly."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "If tests, evidence or non-force remote push fail, stop the unsafe step and report exact blocker."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "2fe0f12add83d81012d97b141113cb408ad36962",
+    "base_tree": "3051cbeeefaef6c4e99d0230503243cf0c036528",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "6bf74848ffcdc7dee6a88580d9011f481e384656eea7457b201b8ce13955e34e"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_magi_workspace_label_and_compaction_icon"
+    ]
+  }
+}

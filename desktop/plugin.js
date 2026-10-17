@@ -982,7 +982,28 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             disabled: compacting || applyingCompaction || saving || deleting || !targetData.count,
             onClick: compact,
             className: 'focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
-            children: compacting ? 'Compacting…' : 'Compact with AI'
+            children: jsxs('span', {
+              className: 'inline-flex items-center gap-1.5',
+              children: [
+                jsx('svg', {
+                  'aria-hidden': 'true',
+                  focusable: 'false',
+                  viewBox: '0 0 24 24',
+                  className: 'size-3.5 shrink-0',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 1.75,
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                  children: [
+                    jsx('path', { d: 'M4 20 17 7' }),
+                    jsx('path', { d: 'm15 3 1.5 2.5L19 7l-2.5 1.5L15 11l-1.5-2.5L11 7l2.5-1.5L15 3Z' }),
+                    jsx('path', { d: 'm20 13 .5 1.5L22 15l-1.5.5L20 17l-.5-1.5L18 15l1.5-.5L20 13Z' })
+                  ]
+                }),
+                jsx('span', { children: compacting ? 'Compacting…' : 'Compact with AI' })
+              ]
+            })
           })
         ]
       }),
@@ -1287,7 +1308,7 @@ function MagiPage(props) {
           jsxs('div', {
             className: 'hidden min-w-0 sm:block',
             children: [
-              jsx('div', { className: 'text-xs font-semibold', children: 'Memory workspace' }),
+              jsx('div', { className: 'text-xs font-semibold', children: 'Magi Workspace' }),
               jsx('div', { className: 'text-[0.6875rem] text-(--ui-text-quaternary)', children: 'Review proposals and maintain durable context' })
             ]
           }),

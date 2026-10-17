@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -216,6 +217,58 @@ def test_stored_memory_toolbar_is_responsive_and_accessible():
     assert "'aria-live': 'polite'" in stored
     assert "disabled: compacting || applyingCompaction || saving || deleting" in stored
     assert "compacting || applyingCompaction || saving || deleting || !targetData.count" in stored
+
+
+def test_magi_workspace_label_and_compaction_icon():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    workspace = source.split("function MagiPage", 1)[1].split("export default", 1)[0]
+    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
+    compact_button = stored.split("jsx(ActionButton, {\n            tone: 'primary'", 1)[1].split("\n          })", 1)[0]
+
+    assert "children: 'Magi Workspace'" in workspace
+    assert "children: 'Memory workspace'" not in workspace
+    assert "selected: mode === id" in workspace
+    assert "onClick: compact" in compact_button
+    assert "disabled: compacting || applyingCompaction || saving || deleting || !targetData.count" in compact_button
+    assert "children: compacting ? 'Compacting…' : 'Compact with AI'" in compact_button
+    assert "className: 'inline-flex items-center gap-1.5'" in compact_button
+    assert "jsx('svg'," in compact_button
+    assert "viewBox: '0 0 24 24'" in compact_button
+    assert "className: 'size-3.5 shrink-0'" in compact_button
+    assert "'aria-hidden': 'true'" in compact_button
+    assert "focusable: 'false'" in compact_button
+    assert "stroke: 'currentColor'" in compact_button
+
+
+def test_readme_version_and_two_accessible_local_screenshots():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+    current_version = next(
+        line.partition(":")[2].strip() for line in manifest.splitlines()
+        if line.startswith("version:")
+    )
+    assert current_version == "1.7.8"
+    assert f"**Current version:** {current_version}" in readme
+    assert "docs/screenshots/magi-dashboard.png" not in readme
+
+    screenshots = (
+        ("Pending writes", "pending-writes.png"),
+        ("Stored memory", "stored-memory.png"),
+    )
+    sizes = []
+    for title, filename in screenshots:
+        relative = f"docs/screenshots/{filename}"
+        assert f"### {title}" in readme
+        assert f"![Magi {title}:" in readme
+        assert f"]({relative})" in readme
+        assert readme.count(f"]({relative})") == 1
+        png = ROOT / relative
+        assert png.is_file()
+        header = png.read_bytes()[:24]
+        assert header[:8] == b"\x89PNG\r\n\x1a\n"
+        assert header[12:16] == b"IHDR"
+        sizes.append(struct.unpack(">II", header[16:24]))
+    assert sizes == [(1414, 994), (1414, 994)]
 
 
 def test_magi_segmented_selectors_share_clear_active_states():
