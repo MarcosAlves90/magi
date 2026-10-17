@@ -640,6 +640,8 @@ class FakeMemoryStore:
             working = list(entries)
             for operation in operations:
                 if operation["action"] == "remove":
+                    if operation["matched_entry"] not in working:
+                        return {"success": False, "error": "Pinned memory entry is stale. No operations were applied (batch is all-or-nothing)."}
                     working.remove(operation["matched_entry"])
                 elif operation["action"] == "add":
                     if operation["content"] not in working:
@@ -988,6 +990,30 @@ def test_backend_applies_compaction_as_one_stale_safe_batch(monkeypatch):
 
 
 @pytest.mark.parametrize("target", ["memory", "user"])
+def test_backend_compaction_never_rebinds_hermes_internal_methods(monkeypatch, target):
+    api = load_api()
+
+    class ProtectedMemoryStore(FakeMemoryStore):
+        def __setattr__(self, name, value):
+            if name == "_mutate":
+                raise AssertionError("Plugin attempted to replace a Hermes internal method")
+            super().__setattr__(name, value)
+
+    store = ProtectedMemoryStore(**{target: ["first longer fact", "second longer fact"]})
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+
+    response = client_for(api).post(
+        f"/memory/{target}/compact",
+        json={"source_fingerprint": api._source_fingerprint(getattr(store, f"{target}_entries")),
+              "entries": ["short fact"]},
+    )
+
+    assert response.status_code == 200
+    assert getattr(store, f"{target}_entries") == ["short fact"]
+    assert "_mutate" not in vars(store)
+
+
+@pytest.mark.parametrize("target", ["memory", "user"])
 @pytest.mark.parametrize("proposed", [
     ["A" * 75],  # 25% reduction misses the advertised 40% minimum.
     ["A" * 61],  # One character over the hard ceiling must also fail.
@@ -1039,7 +1065,7 @@ def test_backend_rejects_stale_compaction_without_mutation(monkeypatch):
     assert store.memory_entries == ["newer memory"]
 
 
-def test_backend_rejects_concurrent_add_during_native_batch_lock(monkeypatch):
+def test_backend_preserves_concurrent_add_during_native_batch_lock(monkeypatch):
     api = load_api()
 
     class ConcurrentMemoryStore(FakeMemoryStore):
@@ -1058,12 +1084,33 @@ def test_backend_rejects_concurrent_add_during_native_batch_lock(monkeypatch):
         json={"source_fingerprint": fingerprint, "entries": ["old facts"]},
     )
 
+    assert response.status_code == 200
+    assert store.memory_entries == ["new fact from concurrent writer", "old facts"]
+
+
+def test_backend_rejects_concurrent_removal_of_pinned_entry_without_partial_write(monkeypatch):
+    api = load_api()
+
+    class ConcurrentMemoryStore(FakeMemoryStore):
+        def _mutate(self, target, mutate, *, skip_drift=False):
+            self.memory_entries.remove("old first")
+            return super()._mutate(target, mutate, skip_drift=skip_drift)
+
+    store = ConcurrentMemoryStore(memory=["old first", "old second"])
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+
+    response = client_for(api).post(
+        "/memory/memory/compact",
+        json={"source_fingerprint": api._source_fingerprint(store.memory_entries), "entries": ["old facts"]},
+    )
+
     assert response.status_code == 409
-    assert "changed" in str(response.json()).lower()
-    assert store.memory_entries == ["old first", "old second", "new fact from concurrent writer"]
+    assert "stale" in response.json()["detail"]["error"].lower()
+    assert "No operations were applied" in response.json()["detail"]["error"]
+    assert store.memory_entries == ["old second"]
 
 
-def test_compaction_uses_native_hermes_disk_transaction_and_rejects_concurrent_changes(monkeypatch, tmp_path):
+def test_compaction_uses_native_hermes_disk_transaction_and_preserves_concurrent_writes(monkeypatch, tmp_path):
     """Test native on-disk Hermes separately from conftest's Hermes stubs."""
     hermes_root = Path.home() / ".hermes" / "hermes-agent"
     if not (hermes_root / "tools" / "memory_tool_store.py").is_file():
@@ -1093,7 +1140,12 @@ spec = importlib.util.spec_from_file_location("native_hermes_magi_api", api_path
 api = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = api
 spec.loader.exec_module(api)
-store = MemoryStore()
+class ConcurrentAddStore(MemoryStore):
+    def apply_batch(self, target, operations):
+        assert writer.add("memory", "concurrent third fact")["success"]
+        return super().apply_batch(target, operations)
+
+store = ConcurrentAddStore()
 store.load_from_disk()
 api._memory_store = lambda: store
 app = FastAPI()
@@ -1101,27 +1153,42 @@ app.include_router(api.router)
 client = TestClient(app)
 original = api._source_fingerprint(list(store.memory_entries))
 
-# A separate native MemoryStore writes after Magi's first fingerprint check.
-native_mutate = store._mutate
-def write_before_native_lock(target, mutation, *, skip_drift=False):
-    assert writer.add("memory", "concurrent third fact")["success"]
-    return native_mutate(target, mutation, skip_drift=skip_drift)
-store._mutate = write_before_native_lock
+# A second native MemoryStore writes after Magi's initial fingerprint check.
 response = client.post("/memory/memory/compact", json={
     "source_fingerprint": original, "entries": ["old facts"]})
-assert response.status_code == 409, response.text
+assert response.status_code == 200, response.text
 disk = MemoryStore()
 disk.load_from_disk()
-assert disk.memory_entries == ["old first", "old second", "concurrent third fact"]
+assert disk.memory_entries == ["concurrent third fact", "old facts"]
+assert "_mutate" not in vars(store)
 
-del store._mutate
+class ConcurrentRemoveStore(MemoryStore):
+    def apply_batch(self, target, operations):
+        writer.load_from_disk()
+        assert writer.remove("memory", "old facts", matched_entry="old facts")["success"]
+        return super().apply_batch(target, operations)
+
+removing_store = ConcurrentRemoveStore()
+removing_store.load_from_disk()
+api._memory_store = lambda: removing_store
+refreshed = api._source_fingerprint(list(removing_store.memory_entries))
+response = client.post("/memory/memory/compact", json={
+    "source_fingerprint": refreshed, "entries": ["third fact"]})
+assert response.status_code == 409, response.text
+assert "No operations were applied" in response.json()["detail"]["error"]
+disk.load_from_disk()
+assert disk.memory_entries == ["concurrent third fact"]
+assert "_mutate" not in vars(removing_store)
+
+store = MemoryStore()
 store.load_from_disk()
+api._memory_store = lambda: store
 refreshed = api._source_fingerprint(list(store.memory_entries))
 response = client.post("/memory/memory/compact", json={
-    "source_fingerprint": refreshed, "entries": ["all facts"]})
+    "source_fingerprint": refreshed, "entries": ["fact"]})
 assert response.status_code == 200, response.text
 disk.load_from_disk()
-assert disk.memory_entries == ["all facts"]
+assert disk.memory_entries == ["fact"]
 assert "_mutate" not in vars(store)
 '''
     env = {**os.environ, "HERMES_HOME": str(tmp_path),
