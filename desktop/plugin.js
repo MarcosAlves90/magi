@@ -51,6 +51,27 @@ function Badge({ children, tone = 'default' }) {
   })
 }
 
+function SegmentedChoice({ selected, disabled, onClick, children, className = '' }) {
+  return jsxs('button', {
+    type: 'button',
+    disabled,
+    onClick,
+    'aria-pressed': selected,
+    className: `inline-flex min-w-0 items-center gap-2 rounded-md border px-3 py-1.5 text-left text-xs font-medium ${CONTROL_TRANSITION} focus-visible:outline-2 focus-visible:outline-(--ui-accent) disabled:pointer-events-none disabled:opacity-50 ${
+      selected
+        ? 'border-(--ui-accent) bg-(--ui-bg-primary) text-(--ui-text-primary) ring-1 ring-(--ui-accent) shadow-sm'
+        : 'border-transparent text-(--ui-text-secondary) hover:border-(--ui-stroke-secondary) hover:bg-(--chrome-action-hover) hover:text-(--ui-text-primary)'
+    } ${className}`,
+    children: [
+      jsx('span', {
+        'aria-hidden': 'true',
+        className: `size-1.5 shrink-0 rounded-full bg-(--ui-accent) ${selected ? 'opacity-100' : 'opacity-0'}`
+      }),
+      jsx('span', { className: 'min-w-0', children })
+    ]
+  })
+}
+
 function ActionButton({ children, tone = 'default', className = '', ...props }) {
   const toneClass =
     tone === 'danger'
@@ -942,16 +963,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             'aria-label': 'Stored memory target',
             className: 'flex shrink-0 gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
             children: STORED_TARGETS.map(([id, label]) =>
-              jsx('button', {
-                type: 'button',
+              jsx(SegmentedChoice, {
                 disabled: compacting || applyingCompaction || saving || deleting,
                 onClick: () => selectTarget(id),
-                'aria-pressed': target === id,
-                className: `rounded-md px-3 py-1.5 text-xs focus-visible:outline-2 focus-visible:outline-(--ui-accent) ${CONTROL_TRANSITION} ${
-                  target === id
-                    ? 'bg-(--ui-bg-primary,transparent) font-medium text-(--ui-text-primary)'
-                    : 'text-(--ui-text-tertiary) hover:text-(--ui-text-primary)'
-                }`,
+                selected: target === id,
                 children: `${label} · ${stored.data?.targets?.[id]?.usage_percent ?? 0}%`
               }, id)
             )
@@ -1283,19 +1298,16 @@ function MagiPage(props) {
               ['pending', 'Pending writes', 'Review queue'],
               ['stored', 'Stored memory', 'Durable context']
             ].map(([id, label, hint]) =>
-              jsxs('button', {
-                type: 'button',
+              jsx(SegmentedChoice, {
                 onClick: () => setMode(id),
-                'aria-pressed': mode === id,
-                className: `rounded-md px-3 py-1.5 text-left ${CONTROL_TRANSITION} ${
-                  mode === id
-                    ? 'bg-(--ui-bg-primary,transparent) text-(--ui-text-primary)'
-                    : 'text-(--ui-text-tertiary) hover:text-(--ui-text-primary)'
-                }`,
-                children: [
-                  jsx('div', { className: 'text-xs font-medium', children: label }),
-                  jsx('div', { className: 'hidden text-[0.625rem] text-(--ui-text-quaternary) md:block', children: hint })
-                ]
+                selected: mode === id,
+                children: jsxs('span', {
+                  className: 'min-w-0',
+                  children: [
+                    jsx('span', { className: 'block text-xs font-medium', children: label }),
+                    jsx('span', { className: `hidden text-[0.625rem] md:block ${mode === id ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'}`, children: hint })
+                  ]
+                })
               }, id)
             )
           })

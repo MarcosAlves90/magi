@@ -1,0 +1,203 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "feat(desktop): clarify active memory navigation"
+  },
+  "scope": {
+    "allowed_paths": [
+      "desktop/plugin.js",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Clarify the active selection in the Memory/User and Pending writes/Stored memory segmented selectors using one shared visual language without altering behavior, compact layout or backend.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Both selectors reuse the same UI component and show selected choice with a high-visibility accent outline, elevated background, persistent indicator and stronger text; inactive choices have separate hover appearance."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Each option remains a native button with aria-pressed reflecting selection; controls support Tab/Enter/Space, visible focus, disabled state and unchanged click handlers."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Compact metric rows and search/target/action toolbar are unchanged, with no horizontal overflow for selector at 320px, 768px or 1280px."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Focused regression verifies both selectors render a shared SegmentedChoice with distinct selected/inactive CSS tokens, selected indicator, and hover state.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Regression verifies aria-pressed, button semantics, focus-visible contrast, target and mode handlers and disabled propagation.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Regression checks retained search and metrics layout; Chromium visual fixture inspects selectors at 320/768/1280 and validates classes in distributed Hermes CSS.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "All data loading, memory selection, navigation, editing, compaction and REST logic remain unchanged."
+      },
+      {
+        "id": "INV-2",
+        "statement": "No modifications outside desktop/plugin.js and tests/test_desktop.py; no new runtime dependencies."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Prior compact metrics and toolbar remain in place."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Active and inactive options are visually indistinguishable."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Selected state is conveyed only by color, without accessible state or visual shape/indicator."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "Selectors clip or cause horizontal scrolling on narrow windows."
+      },
+      {
+        "id": "FORBID-4",
+        "statement": "The profile mariupol is updated or runtime behavior changes."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Clean git HEAD 90d83b2db952133ee0c61903d930e26bebbd1109 and current two selector implementations."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Shared SegmentedChoice and both selector uses in desktop/plugin.js."
+      },
+      {
+        "id": "OUT-2",
+        "statement": "Regressions and strict POLIS build proof."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Missing target percentages use existing 0% fallback; controls retain prior disabled behavior."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "Failure of regression, CSS compatibility or Hermes validation blocks installation."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "90d83b2db952133ee0c61903d930e26bebbd1109",
+    "base_tree": "04b9521a8c79099f0930b96987c28f99b12d1e49",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "38e6440dddabecbdcb67a4b9c16235206c9801dbbd78405b85ce692f54cc3534"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_magi_segmented_selectors_share_clear_active_states"
+    ]
+  }
+}
