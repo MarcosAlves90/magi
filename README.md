@@ -28,7 +28,7 @@ In Hermes Desktop, go to **Capabilities → Plugins** and enable both the **Agen
 - **Pending writes:** Review each proposal using **Overview**, **Proposal**, **Diff**, **Raw**, or **Verify**, then approve or reject it. Bulk actions require confirmation. Proposals targeting entries that no longer exist are marked obsolete and can be removed with **Delete obsolete**.
 - **Stored memory:** Switch between **Memory** (`MEMORY.md`) and **User** (`USER.md`). Search entries, inspect usage and remaining capacity, and add or edit entries. Deletion requires confirmation.
 - **Resizable views:** Drag the lower edge of the pending-write inspector or stored-memory editor to change its height.
-- **AI compaction:** Select a store and choose **Compact with AI** to review a proposed shorter version. Magi accepts a preview only if it uses at most 60% of the original characters (at least a 40% reduction); it can retry up to three times. If no safe reduction is available, the memory stays unchanged. Nothing is written until you choose **Apply compaction**. If the source changes after preview, the apply is rejected.
+- **AI compaction:** Select a store and choose **Compact with AI** to review a proposed shorter version. Magi accepts a preview only if it uses at most 60% of the original characters (at least a 40% reduction); it can retry up to three times. If no safe reduction is available, the memory stays unchanged. Nothing is written until you choose **Apply compaction**. Magi rejects a stale source at its initial fingerprint check and Hermes rejects missing or changed pinned entries under its batch lock. Concurrent additions may still be preserved; this is not a full-snapshot check under the lock.
 
 Pending-write decisions and compaction previews work without an open chat session. Stored-memory changes use Hermes' native memory safeguards, including checks against stale data.
 
@@ -89,4 +89,4 @@ Run the repository verification suite:
 ./verify.sh
 ```
 
-This checks Python syntax, runs tests with more than 95% line coverage, and validates the plugin with Hermes' `plugins validate --install-deps` admission check. Compaction apply currently depends on Hermes' private `_mutate` interface; revalidate compatibility after Hermes upgrades.
+This checks Python syntax, runs tests against the repository's global line-coverage threshold above 95% (which includes tests), and validates the plugin with Hermes' `plugins validate --install-deps` admission check. Compaction apply calls Hermes' public `MemoryStore.apply_batch` and does not rebind its private `_mutate` method. See [Hermes memory compatibility and upstream dependencies](docs/hermes-memory-compatibility.md) for concurrency limits, pre-existing serialization behavior, and test evidence.

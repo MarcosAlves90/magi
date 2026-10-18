@@ -2,6 +2,11 @@
 
 ## 1.7.8 — 2026-10-17
 
+- Documented the Hermes upstream API guarantees still needed for atomic
+  snapshot/version preconditions, including reordering and ABA scenarios;
+  distinguished the pre-existing shared-delimiter serialization issue from
+  regressions caused by the public batch API migration, and summarized the two
+  isolated stress campaigns and their remaining uncertainties.
 - Applied Desktop AI compaction through Hermes' public `MemoryStore.apply_batch`
   without rebinding the private `_mutate` method or depending on `skip_drift`,
   resolving the Hermes plugin catalog rule 9 review.
