@@ -289,6 +289,9 @@ def build_memory_compaction_preview(
                 "outcome": "proposal",
                 "target": target,
                 "source_fingerprint": memory_source_fingerprint(source_entries),
+                # Exactly the snapshot supplied to the first model pass;
+                # no later read can silently change what Diff compares.
+                "source_entries": source_entries,
                 "before_chars": before_chars,
                 "after_chars": after_chars,
                 "before_entry_count": before_entry_count,

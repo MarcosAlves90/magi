@@ -81,6 +81,38 @@ function canRetryDecisionItem(item, report, records) {
     records.some(record => record.id === item.id)
 }
 
+// Line-aligned LCS for ordinary previews; bounded fallback keeps huge inputs linear.
+// Each row includes a word label so highlighting never relies on color alone.
+function buildCompactionDiff(beforeEntries, afterEntries) {
+  const before = beforeEntries.join('\n§\n').split('\n')
+  const after = afterEntries.join('\n§\n').split('\n')
+  const rows = []
+  const put = (kind, text) => rows.push({ kind, text })
+  if (before.length * after.length <= 80000) {
+    const table = Array.from({ length: before.length + 1 }, () => new Uint32Array(after.length + 1))
+    for (let i = before.length - 1; i >= 0; i--) {
+      for (let j = after.length - 1; j >= 0; j--) {
+        table[i][j] = before[i] === after[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1])
+      }
+    }
+    let i = 0, j = 0
+    while (i < before.length || j < after.length) {
+      if (i < before.length && j < after.length && before[i] === after[j]) { put('unchanged', before[i]); i++; j++ }
+      else if (i < before.length && (j === after.length || table[i + 1][j] >= table[i][j + 1])) put('removed', before[i++])
+      else put('added', after[j++])
+    }
+  } else {
+    let start = 0
+    while (start < before.length && start < after.length && before[start] === after[start]) put('unchanged', before[start++])
+    let endBefore = before.length - 1, endAfter = after.length - 1
+    while (endBefore >= start && endAfter >= start && before[endBefore] === after[endAfter]) { endBefore--; endAfter-- }
+    for (let i = start; i <= endBefore; i++) put('removed', before[i])
+    for (let j = start; j <= endAfter; j++) put('added', after[j])
+    for (let i = endBefore + 1; i < before.length; i++) put('unchanged', before[i])
+  }
+  return rows
+}
+
 const CONTROL_TRANSITION = 'transition-all duration-100 ease-out motion-reduce:transition-none'
 const PANEL_TRANSITION = 'transition-[background-color,border-color,opacity] duration-150 ease-out motion-reduce:transition-none'
 const RESIZABLE_ENTRY_VIEWER = 'h-[48vh] min-h-40 max-h-[72vh] flex-none resize-y overflow-auto'
@@ -911,6 +943,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [compactionElapsed, setCompactionElapsed] = useState(0)
   const [applyingCompaction, setApplyingCompaction] = useState(false)
   const [compactionPreview, setCompactionPreview] = useState(null)
+  const [previewView, setPreviewView] = useState('entries')
   const [feedback, setFeedback] = useState(null)
 
   const stored = useQuery({
@@ -937,6 +970,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       : filtered[0] || entries[0] || null
   const isDirty = Boolean(current && draft !== current.content)
   const targetLabel = target === 'memory' ? 'MEMORY.md' : 'USER.md'
+  const previewDiff = useMemo(
+    () => compactionPreview ? buildCompactionDiff(compactionPreview.source_entries || [], compactionPreview.proposed_entries || []) : [],
+    [compactionPreview]
+  )
 
   useEffect(() => {
     if (!adding) setDraft(current?.content || '')
@@ -1062,6 +1099,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
         return
       }
       setCompactionPreview(preview)
+      setPreviewView('entries')
     } catch (error) {
       setFeedback({
         kind: 'error',
@@ -1309,8 +1347,21 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               jsxs('div', {
                 className: 'min-h-0 flex-1 overflow-auto px-4 py-3',
                 children: [
-                  jsx('h3', { className: 'mb-2 text-xs font-semibold', children: 'Proposed memory entries' }),
-                  jsx('div', { className: 'space-y-2', children: (compactionPreview.proposed_entries || []).map((entry, index) =>
+                  jsx('div', { className: 'mb-2 flex items-center gap-2', children: [
+                    previewView === 'diff'
+                      ? jsx('h3', { className: 'mr-auto text-xs font-semibold', children: 'Compaction diff' })
+                      : jsx('h3', { className: 'mr-auto text-xs font-semibold', children: 'Proposed memory entries' }),
+                    jsx(ActionButton, { onClick: () => setPreviewView('entries'), 'aria-pressed': previewView === 'entries', children: 'Entries' }),
+                    jsx(ActionButton, { onClick: () => setPreviewView('diff'), 'aria-pressed': previewView === 'diff', children: 'Diff' })
+                  ] }),
+                  previewView === 'diff'
+                    ? jsx('div', { 'aria-label': 'Compaction diff', 'data-selectable-text': 'true', className: 'space-y-0.5 font-mono text-xs select-text', children: previewDiff.map((row, index) =>
+                        jsxs('div', {
+                          className: 'whitespace-pre-wrap break-words border-l-2 border-(--ui-stroke-secondary) px-2 py-0.5',
+                          children: [jsx('strong', { className: 'mr-2', children: row.kind === 'removed' ? 'Removed −' : row.kind === 'added' ? 'Added +' : 'Unchanged =' }), row.text]
+                        }, index)
+                      ) })
+                    : jsx('div', { className: 'space-y-2', children: (compactionPreview.proposed_entries || []).map((entry, index) =>
                   jsxs('div', {
                     className: `rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-primary,transparent) p-3 ${PANEL_TRANSITION}`,
                     children: [

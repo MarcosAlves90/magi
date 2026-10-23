@@ -29,6 +29,9 @@
   (`\\n§\\n`), before native mutation. Invalid model proposals retry safely;
   existing malformed entries are flagged by read-only index diagnostics.
   Ordinary multiline and Unicode entries remain supported.
+- Added a selectable line diff between the original compaction snapshot and
+  proposed entries, with explicit unchanged/removed/added labels and no extra
+  AI request (MAGI-005).
 - Added per-store, read-only memory diagnostics with exact duplicate-text
   groups, character usage, length distribution, and links to flagged entries.
   Informational thresholds and limitations are documented; the indicators
