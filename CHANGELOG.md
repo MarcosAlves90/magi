@@ -12,6 +12,10 @@
   (`\\n§\\n`), before native mutation. Invalid model proposals retry safely;
   existing malformed entries are flagged by read-only index diagnostics.
   Ordinary multiline and Unicode entries remain supported.
+- Added combinable pending-queue search, action, store, origin, status and UTC
+  creation-date filters, with an explicit clear action and filtered/global
+  totals. Invalid dates are labeled unknown; bulk approval/rejection remains
+  explicitly scoped to the entire queue, even with filters active (MAGI-010).
 - Documented the Hermes upstream API guarantees still needed for atomic
   snapshot/version preconditions, including reordering and ABA scenarios;
   distinguished the pre-existing shared-delimiter serialization issue from

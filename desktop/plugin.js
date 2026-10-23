@@ -15,13 +15,40 @@ const STORED_TARGETS = [
   ['user', 'User']
 ]
 
+const EMPTY_PENDING_FILTERS = { action: '', target: '', origin: '', state: '', fromDate: '', toDate: '' }
+
 function recordLabel(record) {
   return `${record.action}/${record.target}`
 }
 
 function formatCreated(value) {
-  const date = new Date(Number(value || 0) * 1000)
-  return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString()
+  const date = value == null || value === '' ? null : new Date(Number(value) * 1000)
+  return !date || !Number.isFinite(date.getTime()) ? 'Unknown date' : date.toLocaleString()
+}
+
+// Compare UTC calendar days so inclusive bounds are independent of the host timezone.
+function pendingCreatedDate(value) {
+  if (value == null || value === '') return null
+  const seconds = Number(value)
+  if (!Number.isFinite(seconds)) return null
+  const date = new Date(seconds * 1000)
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null
+}
+
+function filterPendingRecords(records, filters = {}) {
+  const query = String(filters.query || '').trim().toLocaleLowerCase()
+  return records.filter(record => {
+    if (query && !`${record.id} ${record.action} ${record.target} ${record.origin} ${record.summary}`.toLocaleLowerCase().includes(query)) return false
+    if (filters.action && record.action !== filters.action) return false
+    if (filters.target && record.target !== filters.target) return false
+    if (filters.origin && String(record.origin || 'unknown') !== filters.origin) return false
+    if (filters.state && (record.target_status?.state || 'unknown') !== filters.state) return false
+    if (filters.fromDate || filters.toDate) {
+      const date = pendingCreatedDate(record.created_at)
+      if (!date || (filters.fromDate && date < filters.fromDate) || (filters.toDate && date > filters.toDate)) return false
+    }
+    return true
+  })
 }
 
 const CONTROL_TRANSITION = 'transition-all duration-100 ease-out motion-reduce:transition-none'
@@ -302,6 +329,7 @@ function OverviewView({ detail }) {
 
 function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpenStoredMemory }) {
   const [search, setSearch] = useState('')
+  const [filters, setFilters] = useState({ ...EMPTY_PENDING_FILTERS })
   const [selected, setSelected] = useState('')
   const [view, setView] = useState('overview')
   const [busyAction, setBusyAction] = useState('')
@@ -319,17 +347,16 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
   const blockedApprovalCount = records.filter(record => record.target_status?.can_apply === false).length
   const readyCount = records.filter(record => record.target_status?.can_apply !== false).length
   const query = search.trim().toLocaleLowerCase()
+  const hasFilters = Boolean(query || Object.values(filters).some(Boolean))
+  const origins = [...new Set(records.map(record => String(record.origin || 'unknown')))].sort()
   const filtered = useMemo(
-    () =>
-      query
-        ? records.filter(record =>
-            `${record.id} ${record.action} ${record.target} ${record.origin} ${record.summary}`
-              .toLocaleLowerCase()
-              .includes(query)
-          )
-        : records,
-    [records, query]
+    () => filterPendingRecords(records, { ...filters, query }),
+    [records, filters, query]
   )
+  const clearFilters = () => {
+    setSearch('')
+    setFilters({ ...EMPTY_PENDING_FILTERS })
+  }
   const selectedVisible = filtered.some(record => record.id === selected)
   const currentId = selectedVisible ? selected : filtered[0]?.id || ''
   const currentRecord = records.find(record => record.id === currentId) || null
@@ -442,7 +469,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
               children: [
                 jsx('span', {
                   className: 'mr-auto font-medium',
-                  children: `${bulkConfirm === 'approve' ? 'Approve' : 'Reject'} all ${records.length} pending write(s)?`
+                  children: `${bulkConfirm === 'approve' ? 'Approve' : 'Reject'} all ${records.length} pending write(s) in the whole queue, including filtered-out proposals?`
                 }),
                 jsx(ActionButton, {
                   tone: bulkConfirm === 'reject' ? 'danger' : 'primary',
@@ -460,7 +487,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
           : jsxs('div', {
               className: 'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2',
               children: [
-                jsx('span', { className: 'mr-auto text-xs text-(--ui-text-tertiary)', children: 'Resolve the whole queue when every proposal is ready.' }),
+                jsx('span', { className: 'mr-auto text-xs text-(--ui-text-tertiary)', children: 'Bulk actions affect the whole queue, including proposals hidden by filters.' }),
                 jsx(ActionButton, {
                   tone: 'primary',
                   disabled: Boolean(busyAction) || blockedApprovalCount > 0,
@@ -483,13 +510,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
             description: 'New memory proposals will appear here. You can inspect and edit the durable entries in Stored memory.',
             action: jsx(ActionButton, { onClick: onOpenStoredMemory, children: 'Stored memory' })
           })
-        : filtered.length === 0 && !listing.isLoading
-          ? jsx(EmptyState, {
-              title: 'No matching proposals',
-              description: 'No pending change matches your search. Clear the search to review the queue.',
-              action: jsx(ActionButton, { onClick: () => setSearch(''), children: 'Clear search' })
-            })
-          : jsxs('div', {
+        : jsxs('div', {
         className: 'grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(15rem,22rem)_1fr]',
         children: [
           jsxs('aside', {
@@ -505,10 +526,42 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                     ariaLabel: 'Search pending memory'
                   }),
                   jsx('div', {
+                    className: 'mt-2 grid grid-cols-2 gap-2',
+                    children: [
+                      [['action', 'Pending action filter', [['', 'All actions'], ['add', 'Add'], ['replace', 'Replace'], ['remove', 'Remove'], ['batch', 'Batch']]],
+                        ['target', 'Pending target filter', [['', 'Both stores'], ['memory', 'Memory'], ['user', 'User']]],
+                        ['origin', 'Pending origin filter', [['', 'All origins'], ...origins.map(value => [value, value === 'background_review' ? 'Automatic review' : value === 'foreground' ? 'Foreground' : value])]],
+                        ['state', 'Pending status filter', [['', 'All statuses'], ['ready', 'Ready'], ['missing', 'Missing'], ['unverifiable', 'Unverifiable'], ['unknown', 'Unknown']]]].map(([key, label, options]) =>
+                        jsx('select', {
+                          'aria-label': label,
+                          value: filters[key],
+                          onChange: event => setFilters(previous => ({ ...previous, [key]: event.target.value })),
+                          className: 'min-w-0 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs',
+                          children: options.map(([value, text]) => jsx('option', { value, children: text }, value))
+                        }, key)
+                      ),
+                      [['fromDate', 'Pending date from'], ['toDate', 'Pending date to']].map(([key, label]) =>
+                        jsxs('label', {
+                          className: 'min-w-0 text-[0.6875rem] text-(--ui-text-tertiary)',
+                          children: [
+                            jsx('span', { children: key === 'fromDate' ? 'From (UTC)' : 'To (UTC)' }),
+                            jsx('input', {
+                              type: 'date',
+                              'aria-label': label,
+                              value: filters[key],
+                              onChange: event => setFilters(previous => ({ ...previous, [key]: event.target.value })),
+                              className: 'mt-1 block w-full min-w-0 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs'
+                            })
+                          ]
+                        }, key)
+                      )
+                    ]
+                  }),
+                  jsx('div', {
                     className: 'mt-2 flex items-center justify-between text-[0.6875rem] text-(--ui-text-quaternary)',
                     children: [
-                      jsx('span', { children: query ? `${filtered.length} of ${records.length} shown` : `${records.length} proposals` }),
-                      query ? jsx('button', { type: 'button', onClick: () => setSearch(''), className: 'hover:text-(--ui-text-primary)', children: 'Clear' }) : null
+                      jsx('span', { 'aria-live': 'polite', children: `${filtered.length} of ${records.length} shown` }),
+                      hasFilters ? jsx('button', { type: 'button', onClick: clearFilters, className: 'hover:text-(--ui-text-primary)', children: 'Clear filters' }) : null
                     ]
                   })
                 ]
@@ -518,7 +571,8 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                 : filtered.length === 0
                   ? jsx(EmptyState, {
                       title: records.length ? 'No matching proposals' : 'Queue is clear',
-                      description: records.length ? 'Try a broader search or clear the filter.' : 'There are no pending memory changes to review.'
+                      description: records.length ? 'Try broader criteria or clear filters to see the whole queue.' : 'There are no pending memory changes to review.',
+                      action: hasFilters ? jsx(ActionButton, { onClick: clearFilters, children: 'Clear filters' }) : null
                     })
                   : jsx('div', {
                       className: 'min-h-0 flex-1 overflow-auto px-2 pb-2',
@@ -549,6 +603,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                               className: 'mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-(--ui-text-quaternary)',
                               children: [
                                 jsx('span', { children: record.origin === 'background_review' ? 'automatic review' : 'foreground' }),
+                                jsx('span', { children: formatCreated(record.created_at) }),
                                 record.target_status?.state === 'missing'
                                   ? jsx('span', { className: 'font-medium text-(--ui-danger,#f87171)', children: 'target missing · obsolete proposal' })
                                   : record.target_status?.state === 'unverifiable'
