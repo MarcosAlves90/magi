@@ -84,6 +84,11 @@ def memory_source_fingerprint(entries: Sequence[str]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def has_embedded_entry_delimiter(content: str, delimiter: str) -> bool:
+    """Guard Magi-controlled entries against Hermes' unescaped entry separator."""
+    return bool(delimiter) and delimiter in content
+
+
 def _memory_compaction_instructions(
     source_chars: int,
     source_entry_count: int,
@@ -260,8 +265,13 @@ def build_memory_compaction_preview(
             normalized = entry.strip()
             if normalized not in proposed:
                 proposed.append(normalized)
-        if invalid_entry or not proposed:
-            previous_validation_error = "empty or non-text entries"
+        if invalid_entry or not proposed or any(
+            has_embedded_entry_delimiter(entry, delimiter) for entry in proposed
+        ):
+            previous_validation_error = (
+                "entry contains the Hermes memory entry delimiter"
+                if not invalid_entry and proposed else "empty or non-text entries"
+            )
             if attempt < MEMORY_COMPACTION_MAX_ATTEMPTS:
                 continue
             return {"success": False, "error": "AI compaction returned invalid entries after 3 attempts; memory was not changed."}

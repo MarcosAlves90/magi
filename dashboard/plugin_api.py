@@ -26,6 +26,7 @@ MagiReview = _core["MagiReview"]
 resolve_hermes_home = _core["resolve_hermes_home"]
 build_memory_compaction_preview = _core["build_memory_compaction_preview"]
 memory_source_fingerprint = _core["memory_source_fingerprint"]
+has_embedded_entry_delimiter = _core["has_embedded_entry_delimiter"]
 _memory_compaction_budgets = _core["_memory_compaction_budgets"]
 _memory_compaction_max_entries = _core["_memory_compaction_max_entries"]
 
@@ -124,6 +125,28 @@ def _serialize_entries(entries: List[str]) -> str:
     return _entry_delimiter().join(entries)
 
 
+def _reject_embedded_delimiter(content: str) -> None:
+    if has_embedded_entry_delimiter(content, _entry_delimiter()):
+        raise HTTPException(
+            status_code=400,
+            detail="Memory entry contains the Hermes entry delimiter; split or edit this entry before saving.",
+        )
+
+
+def _pending_delimiter_error(payload: Dict[str, Any]) -> str | None:
+    operations = payload.get("operations") if payload.get("action") == "batch" else [payload]
+    if not isinstance(operations, list):
+        return None
+    for operation in operations:
+        if not isinstance(operation, dict):
+            continue
+        if operation.get("action") in {"add", "replace"}:
+            content = operation.get("content")
+            if isinstance(content, str) and has_embedded_entry_delimiter(content, _entry_delimiter()):
+                return "proposal contains the Hermes entry delimiter; reject it and recreate the change"
+    return None
+
+
 def _estimate_tokens(text: str) -> int:
     return int(round(len(text) / _MEMORY_CHARS_PER_TOKEN)) if text else 0
 
@@ -165,7 +188,7 @@ def _memory_target(store: Any, target: str) -> Dict[str, Any]:
     entries = store.memory_entries if target == "memory" else store.user_entries
     used_chars = int(store._char_count(target))
     char_limit = int(store._char_limit(target))
-    return {
+    result = {
         "target": target,
         "count": len(entries),
         "used_chars": used_chars,
@@ -176,6 +199,13 @@ def _memory_target(store: Any, target: str) -> Dict[str, Any]:
         "token_estimate_method": _TOKEN_ESTIMATE_METHOD,
         "entries": [{"index": index, "content": entry} for index, entry in enumerate(entries)],
     }
+    issues = [
+        index for index, entry in enumerate(entries)
+        if has_embedded_entry_delimiter(entry, _entry_delimiter())
+    ]
+    if issues:
+        result["integrity_issues"] = issues
+    return result
 
 
 def _record_target_status(record: Any, store: Any) -> Dict[str, Any]:
@@ -339,6 +369,10 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
     overwritten = []
     removed = []
     for record in records:
+        delimiter_error = _pending_delimiter_error(record.payload)
+        if delimiter_error:
+            failed.append(f"{record.id}: {delimiter_error}")
+            continue
         try:
             result = _apply_pending_memory(record.payload, store)
         except Exception as exc:
@@ -361,7 +395,7 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
         output += "\nRemoved entry (re-add anything you still need):\n" + "\n".join(removed)
     if failed:
         output += "\nFailed:\n" + "\n".join(f"  {item}" for item in failed)
-    return {"success": True, "output": output}
+    return {"success": not failed, "output": output}
 
 
 @router.get("/memory")
@@ -379,6 +413,7 @@ def stored_memory() -> Dict[str, Any]:
 def replace_stored_memory(target: str, body: MemoryEditRequest) -> Dict[str, Any]:
     if target not in {"memory", "user"}:
         raise HTTPException(status_code=400, detail="target must be 'memory' or 'user'.")
+    _reject_embedded_delimiter(body.content)
 
     store = _memory_store()
     result = store.replace(target, body.old_text, body.content, matched_entry=body.old_text)
@@ -396,6 +431,7 @@ def replace_stored_memory(target: str, body: MemoryEditRequest) -> Dict[str, Any
 def add_stored_memory(target: str, body: MemoryAddRequest) -> Dict[str, Any]:
     if target not in {"memory", "user"}:
         raise HTTPException(status_code=400, detail="target must be 'memory' or 'user'.")
+    _reject_embedded_delimiter(body.content)
 
     store = _memory_store()
     result = store.add(target, body.content)
@@ -449,6 +485,8 @@ def apply_memory_compaction(target: str, body: MemoryCompactionApplyRequest) -> 
     proposed = [entry.strip() for entry in body.entries]
     if not proposed or any(not entry for entry in proposed):
         raise HTTPException(status_code=400, detail="entries must contain at least one non-empty memory entry.")
+    for entry in proposed:
+        _reject_embedded_delimiter(entry)
     if len(set(proposed)) != len(proposed):
         raise HTTPException(status_code=400, detail="entries must not contain duplicates.")
 

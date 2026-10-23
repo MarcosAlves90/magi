@@ -1,0 +1,110 @@
+diff --git a/tests/test_desktop.py b/tests/test_desktop.py
+index 9ed80d67c508ff7e13c806b37b8040066a45831a..458db4e5bbb70db80f310e02d8dfdc2e1eff99d5 100644
+--- a/tests/test_desktop.py
++++ b/tests/test_desktop.py
+@@ -785,6 +785,77 @@ def test_backend_adds_stored_memory_entry_through_memory_store(monkeypatch):
+     ]
+ 
+ 
++@pytest.mark.parametrize("target", ["memory", "user"])
++def test_backend_rejects_embedded_entry_delimiter_before_native_mutation(monkeypatch, target):
++    api = load_api()
++    store = FakeMemoryStore(memory=["original"], user=["original"])
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    client = client_for(api)
++    invalid = "one\n§\ntwo"
++
++    added = client.post(f"/memory/{target}/entries", json={"content": invalid})
++    replaced = client.put(f"/memory/{target}", json={"old_text": "original", "content": invalid})
++
++    assert added.status_code == 400
++    assert replaced.status_code == 400
++    assert "delimiter" in str(added.json()).lower()
++    assert "delimiter" in str(replaced.json()).lower()
++    assert store.add_calls == []
++    assert store.calls == []
++    assert getattr(store, f"{target}_entries") == ["original"]
++
++
++@pytest.mark.parametrize("target", ["memory", "user"])
++def test_backend_accepts_legitimate_unicode_multiline_entries(monkeypatch, target):
++    api = load_api()
++    store = FakeMemoryStore()
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    content = "primeira linha\n§ separador isolado\n日本語 ✓"
++    response = client_for(api).post(f"/memory/{target}/entries", json={"content": content})
++    assert response.status_code == 200
++    assert getattr(store, f"{target}_entries") == [content]
++
++
++@pytest.mark.parametrize("target", ["memory", "user"])
++def test_backend_rejects_embedded_entry_delimiter_in_compaction(monkeypatch, target):
++    api = load_api()
++    store = FakeMemoryStore(**{target: ["A" * 140]})
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    response = client_for(api).post(
++        f"/memory/{target}/compact",
++        json={"source_fingerprint": api._source_fingerprint(["A" * 140]), "entries": ["a\n§\nb"]},
++    )
++    assert response.status_code == 400
++    assert store.batch_calls == []
++    assert getattr(store, f"{target}_entries") == ["A" * 140]
++
++
++def test_backend_rejects_embedded_entry_delimiter_in_pending_approval(monkeypatch, tmp_path):
++    stage(tmp_path, "bad-delimiter", {"action": "add", "target": "memory", "content": "a\n§\nb"})
++    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
++    api = load_api()
++    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
++    applied = []
++    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: applied.append(args))
++    client = client_for(api)
++    response = client.post("/records/bad-delimiter/decision", json={"action": "approve"})
++    assert applied == []
++    assert response.json()["success"] is False
++    assert (tmp_path / "pending/memory/bad-delimiter.json").exists()
++    rejected = client.post("/records/bad-delimiter/decision", json={"action": "reject"})
++    assert rejected.json()["success"] is True
++
++
++def test_backend_reports_preexisting_delimiter_without_mutating(monkeypatch):
++    api = load_api()
++    store = FakeMemoryStore(memory=["legacy\n§\ninvalid"])
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    response = client_for(api).get("/memory")
++    assert response.status_code == 200
++    assert response.json()["targets"]["memory"]["integrity_issues"] == [0]
++    assert store.memory_entries == ["legacy\n§\ninvalid"]
++
++
+ def test_backend_deletes_exact_stored_memory_entry_through_memory_store(monkeypatch):
+     api = load_api()
+     store = FakeMemoryStore(memory=["keep", "remove me"], user=["profile"])
+diff --git a/tests/test_plugin.py b/tests/test_plugin.py
+index 2aaf4b02e5cbb7526a8e5a6cc17fc79b2b55d91d..fd5d38bb8d66742acddaaf1734cd086f800119f1 100644
+--- a/tests/test_plugin.py
++++ b/tests/test_plugin.py
+@@ -164,6 +164,23 @@ def test_compaction_preview_uses_default_llm_and_returns_reviewable_proposal(mon
+     assert "do not" in call["instructions"].lower()
+ 
+ 
++def test_compaction_preview_retries_embedded_entry_delimiter(monkeypatch, tmp_path):
++    plugin = load_plugin()
++    llm = FakeSequenceLlm([["part one\n§\npart two"], ["safe summary"]])
++    ctx = FakeCtx({"home_override": str(tmp_path)}, llm=llm)
++    store = FakePreviewStore(memory=["A" * 140])
++    monkeypatch.setattr(plugin, "_memory_store", lambda: store)
++    plugin.register(ctx)
++
++    result = json.loads(ctx.commands["memory-compact-preview"]["handler"]("memory"))
++
++    assert result["success"] is True
++    assert result["proposed_entries"] == ["safe summary"]
++    assert result["attempts"] == 2
++    assert len(llm.calls) == 2
++    assert store.memory_entries == ["A" * 140]
++
++
+ def test_compaction_preview_uses_configured_model(monkeypatch, tmp_path):
+     plugin = load_plugin()
+     llm = FakeLlm(["fact one; fact two detail"])

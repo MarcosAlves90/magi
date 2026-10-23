@@ -164,6 +164,23 @@ def test_compaction_preview_uses_default_llm_and_returns_reviewable_proposal(mon
     assert "do not" in call["instructions"].lower()
 
 
+def test_compaction_preview_retries_embedded_entry_delimiter(monkeypatch, tmp_path):
+    plugin = load_plugin()
+    llm = FakeSequenceLlm([["part one\n§\npart two"], ["safe summary"]])
+    ctx = FakeCtx({"home_override": str(tmp_path)}, llm=llm)
+    store = FakePreviewStore(memory=["A" * 140])
+    monkeypatch.setattr(plugin, "_memory_store", lambda: store)
+    plugin.register(ctx)
+
+    result = json.loads(ctx.commands["memory-compact-preview"]["handler"]("memory"))
+
+    assert result["success"] is True
+    assert result["proposed_entries"] == ["safe summary"]
+    assert result["attempts"] == 2
+    assert len(llm.calls) == 2
+    assert store.memory_entries == ["A" * 140]
+
+
 def test_compaction_preview_uses_configured_model(monkeypatch, tmp_path):
     plugin = load_plugin()
     llm = FakeLlm(["fact one; fact two detail"])

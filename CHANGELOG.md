@@ -2,6 +2,11 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-001: rejected Magi-controlled additions, replacements, pending approvals
+  and AI-compaction proposals containing Hermes' complete entry delimiter
+  (`\\n§\\n`), before native mutation. Invalid model proposals retry safely;
+  existing malformed entries are flagged by read-only index diagnostics.
+  Ordinary multiline and Unicode entries remain supported.
 - Documented the Hermes upstream API guarantees still needed for atomic
   snapshot/version preconditions, including reordering and ABA scenarios;
   distinguished the pre-existing shared-delimiter serialization issue from

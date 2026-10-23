@@ -94,10 +94,11 @@ Hermes' `tools/memory_tool_store.py` defines `ENTRY_DELIMITER = "\n§\n"`.
 Its `_write_file` joins entries using that delimiter and `_parse_entries`
 splits on the same bytes. A candidate such as the single string
 `"brief\n§\nanother"` can therefore be stored as *two* entries upon reload.
-Magi's compaction endpoint checks the incoming list length and uniqueness,
-but does not reject an embedded delimiter before calling `apply_batch`. The
-HTTP result can report one entry while a newly loaded store reports two;
-entry-count limits measured before serialization may no longer match disk.
+At the historical baseline, Magi's compaction endpoint checked the incoming
+list length and uniqueness but did not reject an embedded delimiter before
+calling `apply_batch`. The HTTP result could report one entry while a newly
+loaded store reported two; entry-count limits measured before serialization
+could therefore diverge from disk.
 
 This behavior was reproduced for `memory` and `user` in the **first** campaign
 (`edge-faults.log`: two reproductions). Inspection of Magi at the historical
@@ -106,11 +107,14 @@ of the behavior preceded `9327744`.
 
 **Ownership:** Hermes owns the shared serialization format and any general
 lossless escaping, round-trip validation or structured storage migration for
-all clients. **Magi can independently reject an embedded delimiter in its own
-input** as a narrower defense; other Hermes writers would remain
-affected without an upstream fix. Neither change has been implemented as part
-of the catalog-review correction. Avoid treating the issue as proof that the
-public batch API itself violates its all-or-nothing disk-write guarantee.
+all clients. **MAGI-001 now rejects the full embedded delimiter in new content
+under Magi's control**, including stored-memory add/replace, pending add/replace
+approval, and compacted AI preview/apply. The memory API reports indexes of
+pre-existing suspicious entries as `integrity_issues`, without changing or
+deleting them. This guard does not repair entries from other Hermes writers,
+does not make out-of-band writes safe, and was added after the catalog review.
+Avoid treating the issue as proof that the public batch API itself violates
+its all-or-nothing disk-write guarantee.
 
 ## Crash, error and recovery evidence
 
