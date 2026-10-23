@@ -15,13 +15,19 @@ bash ci/test.sh
 echo "[3/4] Coverage"
 bash ci/coverage.sh
 uv run --with 'coverage>=7,<8' python - <<'PY2'
+import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 root = ET.parse(Path('coverage.xml')).getroot()
 line_rate = float(root.attrib['line-rate']) * 100
-print(f'line coverage: {line_rate:.2f}%')
-if not line_rate > 95:
-    raise SystemExit('coverage must be >95%')
+policy = json.loads(Path('.polis/policy.json').read_text())
+gate = next(g for g in policy['gates'] if g['id'] == 'coverage')
+if gate['operator'] != '>':
+    raise SystemExit('unsupported coverage comparison')
+threshold = float(gate['threshold_percent'])
+print(f'production line coverage: {line_rate:.2f}% (required >{threshold:g}%)')
+if not line_rate > threshold:
+    raise SystemExit(f'production line coverage must be >{threshold:g}%')
 PY2
 rm -f .coverage coverage.xml
 
