@@ -512,6 +512,107 @@ def test_backend_bulk_decisions_do_not_require_chat_session(monkeypatch, tmp_pat
     assert not list((tmp_path / "pending" / "memory").glob("*.json"))
 
 
+def test_backend_decision_reports_partial_outcome(monkeypatch, tmp_path):
+    stage(tmp_path, "pass", {"action": "add", "target": "memory", "content": "ok"})
+    stage(tmp_path, "fail", {"action": "add", "target": "memory", "content": "denied"}, created=2)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
+    monkeypatch.setattr(
+        api, "_apply_pending_memory",
+        lambda payload, store: {"success": payload["content"] == "ok", "error": "denied"},
+    )
+    response = client_for(api).post("/records/all/decision", json={"action": "approve"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["outcome"] == "partial"
+    assert body["attempted"] == 2
+    assert body["applied"] == 1
+    assert body["rejected"] == 0
+    assert body["failed"] == 1
+    assert {item["id"]: item["status"] for item in body["items"]} == {
+        "pass": "applied", "fail": "failed",
+    }
+    assert "Approved 1" in body["output"]
+    assert (tmp_path / "pending/memory/fail.json").exists()
+    assert not (tmp_path / "pending/memory/pass.json").exists()
+
+
+def test_backend_decision_reports_complete_and_all_failed(monkeypatch, tmp_path):
+    stage(tmp_path, "first", {"action": "add", "target": "memory", "content": "ok"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: {"success": True})
+    client = client_for(api)
+    approved = client.post("/records/all/decision", json={"action": "approve"}).json()
+    assert approved["success"] is True
+    assert approved["outcome"] == "complete"
+    assert (approved["attempted"], approved["applied"], approved["failed"]) == (1, 1, 0)
+
+    stage(tmp_path, "second", {"action": "add", "target": "user", "content": "no"})
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: {"success": False, "error": "unavailable"})
+    failed = client.post("/records/all/decision", json={"action": "approve"}).json()
+    assert failed["success"] is False
+    assert failed["outcome"] == "failed"
+    assert (failed["attempted"], failed["applied"], failed["failed"]) == (1, 0, 1)
+    assert failed["items"][0]["error"] == "unavailable"
+
+
+def test_backend_decision_reports_applied_cleanup_failed(monkeypatch, tmp_path):
+    stage(tmp_path, "cleanup", {"action": "add", "target": "memory", "content": "ok"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: {"success": True})
+    original_unlink = Path.unlink
+
+    def fail_cleanup(path, *args, **kwargs):
+        if path.name == "cleanup.json":
+            raise PermissionError("cleanup denied")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_cleanup)
+    body = client_for(api).post("/records/cleanup/decision", json={"action": "approve"}).json()
+    assert body["success"] is False
+    assert body["outcome"] == "failed"
+    assert body["applied"] == 1
+    assert body["failed"] == 1
+    assert body["items"][0]["status"] == "applied_cleanup_failed"
+    assert "cleanup" in body["items"][0]["error"].lower()
+    assert (tmp_path / "pending/memory/cleanup.json").exists()
+
+
+def test_backend_decision_reports_partial_rejection(monkeypatch, tmp_path):
+    stage(tmp_path, "keep", {"action": "add", "target": "memory", "content": "a"})
+    stage(tmp_path, "remove", {"action": "add", "target": "memory", "content": "b"}, created=2)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    original_unlink = Path.unlink
+
+    def fail_one(path, *args, **kwargs):
+        if path.name == "keep.json":
+            raise PermissionError("cannot remove proposal")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_one)
+    body = client_for(api).post("/records/all/decision", json={"action": "reject"}).json()
+    assert body["outcome"] == "partial"
+    assert body["success"] is False
+    assert (body["attempted"], body["rejected"], body["failed"]) == (2, 1, 1)
+    assert {item["id"]: item["status"] for item in body["items"]} == {
+        "keep": "failed", "remove": "rejected",
+    }
+
+
+def test_desktop_decision_feedback_observes_partial_outcome():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    assert "result?.outcome" in source
+    assert "partial" in source
+    assert "kind: 'warning'" in source
+
+
 def test_backend_lists_and_renders_pending_records(monkeypatch, tmp_path):
     stage(
         tmp_path,

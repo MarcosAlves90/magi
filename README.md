@@ -32,6 +32,8 @@ In Hermes Desktop, go to **Capabilities → Plugins** and enable both the **Agen
 
 Pending-write decisions and compaction previews work without an open chat session. Stored-memory changes use Hermes' native memory safeguards, including checks against stale data.
 
+Decision responses report `outcome: complete | partial | failed`, counts (`attempted`, `applied`, `rejected`, `failed`) and per-record `items[]` with status and errors. A partial batch can return HTTP 200 because the request completed at the transport layer; `success` is true only when every selected decision and its pending-file cleanup completed. If a memory write was applied but the proposal file could not be removed, its status is `applied_cleanup_failed`: inspect and reconcile it before considering any retry. The legacy `output` text is retained.
+
 ## Configuration
 
 Set these options in the Magi plugin settings:

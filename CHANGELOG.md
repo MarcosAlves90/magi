@@ -2,6 +2,11 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-002: pending approve/reject now reports complete, partial or failed
+  outcomes with per-record statuses and counts. Successful memory mutations
+  followed by pending-file cleanup failure are distinguished from completed
+  operations; Desktop displays partial outcomes as warnings. The legacy text
+  output remains available; `success` is false for incomplete decisions.
 - MAGI-001: rejected Magi-controlled additions, replacements, pending approvals
   and AI-compaction proposals containing Hermes' complete entry delimiter
   (`\\n§\\n`), before native mutation. Invalid model proposals retry safely;

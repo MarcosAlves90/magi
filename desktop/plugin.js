@@ -352,8 +352,17 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
     setFeedback(null)
     try {
       const result = await runDecision(action, target)
-      setFeedback({ kind: 'success', message: result?.output || `${action} completed.` })
-      setSelected('')
+      const outcome = result?.outcome || (result?.success ? 'complete' : 'failed')
+      const outcomeFeedback = {
+        complete: { kind: 'success' },
+        partial: { kind: 'warning' },
+        failed: { kind: 'error' }
+      }
+      setFeedback({
+        ...(outcomeFeedback[outcome] || outcomeFeedback.failed),
+        message: result?.output || `${action} ${outcome}.`
+      })
+      if (outcome === 'complete') setSelected('')
       setBulkConfirm('')
       await listing.refetch()
     } catch (error) {
@@ -623,8 +632,14 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                 : null,
               feedback
                 ? jsx('div', {
+                    role: 'status',
+                    'aria-live': 'polite',
                     className: `border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-2.5 text-xs animate-in fade-in-0 duration-150 ${
-                      feedback.kind === 'error' ? 'text-(--ui-danger,#f87171)' : 'text-(--ui-text-tertiary)'
+                      feedback.kind === 'error'
+                        ? 'text-(--ui-danger,#f87171)'
+                        : feedback.kind === 'warning'
+                          ? 'text-(--ui-warning,#fbbf24)'
+                          : 'text-(--ui-text-tertiary)'
                     }`,
                     children: feedback.message
                   })
@@ -1394,7 +1409,9 @@ export default {
         method: 'POST',
         body: { action }
       })
-      if (!parsed?.success) throw new Error(parsed?.error || `${action} failed.`)
+      if (!parsed?.success && !['partial', 'failed'].includes(parsed?.outcome)) {
+        throw new Error(parsed?.error || `${action} failed.`)
+      }
       return parsed
     }
 

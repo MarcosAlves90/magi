@@ -335,7 +335,11 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
     if selector == "all":
         records, _issues = review._load()
         if not records:
-            return {"success": True, "output": "No pending memory writes."}
+            return {
+                "success": True, "outcome": "complete", "attempted": 0,
+                "applied": 0, "rejected": 0, "failed": 0,
+                "items": [], "output": "No pending memory writes.",
+            }
     else:
         record, error = review._resolve(selector)
         if error:
@@ -343,59 +347,82 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
         assert record is not None
         records = [record]
 
-    if action == "reject":
-        removed = 0
-        failed = []
-        for record in records:
-            try:
-                record.path.unlink()
-                removed += 1
-            except Exception as exc:
-                failed.append(f"{record.id}: {exc}")
-
-        if selector == "all":
-            output = f"Rejected {removed} pending memory write(s)."
-        elif removed == 1:
-            output = f"Rejected pending memory write '{records[0].id}'."
-        else:
-            output = "Rejected 0 pending memory write(s)."
-        if failed:
-            output += "\nFailed:\n" + "\n".join(f"  {item}" for item in failed)
-        return {"success": True, "output": output}
-
-    store = _memory_store()
+    items: List[Dict[str, Any]] = []
     applied = 0
-    failed = []
+    rejected = 0
+    failed = 0
+    complete = 0
+    errors = []
     overwritten = []
     removed = []
+    store = _memory_store() if action == "approve" else None
     for record in records:
+        if action == "reject":
+            try:
+                record.path.unlink()
+                rejected += 1
+                complete += 1
+                items.append({"id": record.id, "status": "rejected"})
+            except Exception as exc:
+                error = f"Pending proposal removal failed ({type(exc).__name__})."
+                failed += 1
+                errors.append(f"{record.id}: {error}")
+                items.append({"id": record.id, "status": "failed", "error": error})
+            continue
+
         delimiter_error = _pending_delimiter_error(record.payload)
         if delimiter_error:
-            failed.append(f"{record.id}: {delimiter_error}")
+            failed += 1
+            errors.append(f"{record.id}: {delimiter_error}")
+            items.append({"id": record.id, "status": "failed", "error": delimiter_error})
             continue
         try:
             result = _apply_pending_memory(record.payload, store)
         except Exception as exc:
             result = {"success": False, "error": str(exc)}
-        if result.get("success"):
-            applied += 1
-            overwritten.extend(f"  {record.id}: {text}" for text in _changed_entries(result, "replaced"))
-            removed.extend(f"  {record.id}: {text}" for text in _changed_entries(result, "removed"))
-            try:
-                record.path.unlink()
-            except Exception as exc:
-                failed.append(f"{record.id}: applied but could not remove pending record: {exc}")
-        else:
-            failed.append(f"{record.id}: {result.get('error') or 'approval failed'}")
+        if not result.get("success"):
+            error = str(result.get("error") or "approval failed")
+            failed += 1
+            errors.append(f"{record.id}: {error}")
+            items.append({"id": record.id, "status": "failed", "error": error})
+            continue
 
-    output = f"Approved {applied} memory write(s)."
+        applied += 1
+        overwritten.extend(f"  {record.id}: {text}" for text in _changed_entries(result, "replaced"))
+        removed.extend(f"  {record.id}: {text}" for text in _changed_entries(result, "removed"))
+        try:
+            record.path.unlink()
+            complete += 1
+            items.append({"id": record.id, "status": "applied"})
+        except Exception as exc:
+            error = f"Memory applied, but pending proposal cleanup failed ({type(exc).__name__}). Reconcile before retrying."
+            failed += 1
+            errors.append(f"{record.id}: {error}")
+            items.append({"id": record.id, "status": "applied_cleanup_failed", "error": error})
+
+    if action == "reject" and selector != "all" and rejected == 1:
+        output = f"Rejected pending memory write '{records[0].id}'."
+    elif action == "reject":
+        output = f"Rejected {rejected} pending memory write(s)."
+    else:
+        output = f"Approved {applied} memory write(s)."
     if overwritten:
         output += "\nOverwrote entire entry (re-add anything you still need):\n" + "\n".join(overwritten)
     if removed:
         output += "\nRemoved entry (re-add anything you still need):\n" + "\n".join(removed)
-    if failed:
-        output += "\nFailed:\n" + "\n".join(f"  {item}" for item in failed)
-    return {"success": not failed, "output": output}
+    if errors:
+        output += "\nFailed:\n" + "\n".join(f"  {item}" for item in errors)
+    outcome = "complete" if failed == 0 else ("partial" if complete else "failed")
+    return {
+        "success": outcome == "complete",
+        "outcome": outcome,
+        "attempted": len(records),
+        "applied": applied,
+        "rejected": rejected,
+        "failed": failed,
+        "items": items,
+        "output": output,
+    }
 
 
 @router.get("/memory")
