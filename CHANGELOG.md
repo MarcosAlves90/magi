@@ -25,6 +25,11 @@
   creation-date filters, with an explicit clear action and filtered/global
   totals. Invalid dates are labeled unknown; bulk approval/rejection remains
   explicitly scoped to the entire queue, even with filters active (MAGI-010).
+- MAGI-013: measured coverage exclusively for the four production Python
+  modules, with branch instrumentation and per-file missed-line reporting.
+  Set the POLIS and local verification line-coverage threshold to the measured,
+  achievable >90% production level; documented the former misleading 96.45%
+  global metric versus 91.49% production on baseline `d9c72a8`.
 - Documented the Hermes upstream API guarantees still needed for atomic
   snapshot/version preconditions, including reordering and ABA scenarios;
   distinguished the pre-existing shared-delimiter serialization issue from
