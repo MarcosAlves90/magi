@@ -25,6 +25,12 @@
   creation-date filters, with an explicit clear action and filtered/global
   totals. Invalid dates are labeled unknown; bulk approval/rejection remains
   explicitly scoped to the entire queue, even with filters active (MAGI-010).
+- MAGI-020: removed the duplicate pytest pass from `verify.sh`, leaving one
+  coverage-instrumented test run while preserving standalone `ci/test.sh`,
+  production coverage enforcement, syntax checks, and Hermes plugin admission.
+  Added shell regressions for test invocation count and failure propagation.
+  On the measured macOS baseline, verification improved from 38.66s to 17.35s
+  (single-run observation; elapsed time depends on the environment).
 - MAGI-013: measured coverage exclusively for the four production Python
   modules, with branch instrumentation and per-file missed-line reporting.
   Set the POLIS and local verification line-coverage threshold to the measured,
