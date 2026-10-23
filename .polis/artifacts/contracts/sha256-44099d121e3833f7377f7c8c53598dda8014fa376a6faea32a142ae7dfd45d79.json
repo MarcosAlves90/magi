@@ -1,0 +1,189 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "perf(ci): run pytest once during Magi verification"
+  },
+  "scope": {
+    "allowed_paths": [
+      "verify.sh",
+      "tests/test_quality_scripts.py",
+      "ci/test.sh",
+      "ci/coverage.sh",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_quality_scripts.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-020: remove duplicated pytest execution from ./verify.sh while preserving standalone test and coverage scripts, coverage threshold and Hermes plugin validation; quantify elapsed time against measured baseline.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Execute the Magi pytest suite exactly once within ./verify.sh, through ci/coverage.sh with branch and production coverage; preserve correct process exit status."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Preserve independent bash ci/test.sh and bash ci/coverage.sh for manual and POLIS use, Python compile checks, production coverage \u003e90%, and Hermes plugins validate --install-deps."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Document measured before/after end-to-end verify.sh duration, failure propagation and limitations without Magi version bump."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Behavioral isolated shell regression confirms verify.sh invokes exactly one pytest command while retaining compile, coverage and Hermes validation.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Regression proves failed pytest and below-threshold production coverage cause nonzero verify.sh exits, with manual ci/test.sh unchanged.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Full ./verify.sh and POLIS gates pass, baseline duration is contrasted with observed post-change time, and changelog/README updated.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Plugin version stays 1.7.8; Hermes APIs, tests for Magi core and plugin and coverage denominator stay unchanged."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "verify.sh invokes both ci/test.sh and ci/coverage.sh, or swallows failures."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Baseline d9c72a8 verify.sh 38.66 seconds; after MAGI-013 a4c5b41 verify.sh 36.73 seconds, both with two pytest invocations."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Single-test-pass verify.sh, dedicated shell integration tests and 1.7.8 docs."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Propagate nonzero pytest and production coverage gate failures; do not claim stable speedup from single noisy run."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "a4c5b413dc116bbca367b00ee033ed9bbdb61bbe",
+    "base_tree": "24f5c3e43e1e886daad2cfeb12874c696fe004e5",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "e4a2afb1d9be0bb53cbfd43234286e8ca72974d21aebd75ce49d11e0ff2b1948"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "uv",
+        "run",
+        "--with",
+        "pytest\u003e=8,\u003c10",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_quality_scripts.py",
+        "--rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_verify_runs_test_suite_once"
+    ]
+  }
+}

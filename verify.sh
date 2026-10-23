@@ -3,16 +3,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-echo "[1/4] Python syntax"
+echo "[1/3] Python syntax"
 python3 -m py_compile __init__.py core.py
 if [[ -f dashboard/plugin_api.py ]]; then
   python3 -m py_compile dashboard/plugin_api.py
 fi
 
-echo "[2/4] Tests"
-bash ci/test.sh
-
-echo "[3/4] Coverage"
+echo "[2/3] Tests and production coverage"
 bash ci/coverage.sh
 uv run --with 'coverage>=7,<8' python - <<'PY2'
 import json
@@ -31,5 +28,5 @@ if not line_rate > threshold:
 PY2
 rm -f .coverage coverage.xml
 
-echo "[4/4] Hermes plugin validation"
+echo "[3/3] Hermes plugin validation"
 hermes plugins validate "$ROOT" --install-deps
