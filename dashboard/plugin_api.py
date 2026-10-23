@@ -182,6 +182,40 @@ def _plugin_llm() -> Any:
     )
 
 
+def _memory_diagnostics(entries: List[str], used_chars: int, char_limit: int) -> Dict[str, Any]:
+    """Linear-time, exact-text indicators; no inference or memory writes."""
+    distribution = {"empty": 0, "1-120": 0, "121-500": 0, "501-1000": 0, ">1000": 0}
+    positions: Dict[str, List[int]] = {}
+    long_indices = []
+    for index, entry in enumerate(entries):
+        size = len(entry)
+        if size == 0:
+            bucket = "empty"
+        elif size <= 120:
+            bucket = "1-120"
+        elif size <= 500:
+            bucket = "121-500"
+        elif size <= 1000:
+            bucket = "501-1000"
+        else:
+            bucket = ">1000"
+        distribution[bucket] += 1
+        if size > 500:
+            long_indices.append(index)
+        positions.setdefault(entry, []).append(index)
+    return {
+        "method": "deterministic_text_only_v1",
+        "entry_count": len(entries),
+        "used_chars": used_chars,
+        "remaining_chars": max(0, char_limit - used_chars),
+        "over_budget_chars": max(0, used_chars - char_limit),
+        "long_entry_threshold_chars": 500,
+        "long_entry_indices": long_indices,
+        "exact_duplicate_groups": [indices for indices in positions.values() if len(indices) > 1],
+        "size_distribution": distribution,
+    }
+
+
 def _memory_target(store: Any, target: str) -> Dict[str, Any]:
     if target not in {"memory", "user"}:
         raise HTTPException(status_code=400, detail="target must be 'memory' or 'user'.")
@@ -198,6 +232,7 @@ def _memory_target(store: Any, target: str) -> Dict[str, Any]:
         "estimated_token_limit": int(round(char_limit / _MEMORY_CHARS_PER_TOKEN)),
         "token_estimate_method": _TOKEN_ESTIMATE_METHOD,
         "entries": [{"index": index, "content": entry} for index, entry in enumerate(entries)],
+        "diagnostics": _memory_diagnostics(entries, used_chars, char_limit),
     }
     issues = [
         index for index, entry in enumerate(entries)

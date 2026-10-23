@@ -824,6 +824,10 @@ def test_backend_lists_stored_memory_for_both_targets(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert "estimated_tokens" in body["targets"]["memory"], "token estimate metadata is required"
+    # The established memory summary contract remains unchanged; inspect the
+    # additional read-only diagnostics separately.
+    assert body["targets"]["memory"].pop("diagnostics")["entry_count"] == 2
+    assert body["targets"]["user"].pop("diagnostics")["entry_count"] == 1
     assert body == {
         "targets": {
             "memory": {

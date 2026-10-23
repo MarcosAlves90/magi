@@ -12,6 +12,10 @@
   (`\\n§\\n`), before native mutation. Invalid model proposals retry safely;
   existing malformed entries are flagged by read-only index diagnostics.
   Ordinary multiline and Unicode entries remain supported.
+- Added per-store, read-only memory diagnostics with exact duplicate-text
+  groups, character usage, length distribution, and links to flagged entries.
+  Informational thresholds and limitations are documented; the indicators
+  neither invoke AI nor trigger automatic edits (MAGI-018).
 - Added combinable pending-queue search, action, store, origin, status and UTC
   creation-date filters, with an explicit clear action and filtered/global
   totals. Invalid dates are labeled unknown; bulk approval/rejection remains

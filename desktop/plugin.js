@@ -748,6 +748,49 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
   })
 }
 
+function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry }) {
+  if (!diagnostics) return null
+  const longIndices = diagnostics.long_entry_indices || []
+  const duplicateGroups = diagnostics.exact_duplicate_groups || []
+  const duplicateIndices = duplicateGroups.flat()
+  const flaggedIndices = [...new Set([...longIndices, ...duplicateIndices])].sort((a, b) => a - b)
+  return jsxs('details', {
+    className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-2 text-xs',
+    children: [
+      jsxs('summary', {
+        className: 'cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+        children: ['Memory diagnostics · ', targetLabel, ' · ', longIndices.length, ' long · ', duplicateGroups.length, ' Exact duplicate groups']
+      }),
+      jsxs('div', {
+        className: 'mt-2 space-y-2 text-(--ui-text-tertiary)',
+        children: [
+          jsx('p', {
+            children: 'Read-only, informational text heuristics. Exact duplicates mean identical text, not semantic redundancy; length does not establish quality or contradictions. No AI is used.'
+          }),
+          jsx('p', {
+            children: `${diagnostics.entry_count} entries · ${diagnostics.used_chars} chars used · ${diagnostics.remaining_chars} remaining${diagnostics.over_budget_chars ? ` · ${diagnostics.over_budget_chars} above budget` : ''}`
+          }),
+          jsx('p', {
+            children: `Entry sizes (characters): ${Object.entries(diagnostics.size_distribution || {}).map(([range, count]) => `${range}: ${count}`).join(' · ')}. Long entries exceed ${diagnostics.long_entry_threshold_chars} characters.`
+          }),
+          jsx('p', { children: duplicateGroups.length ? `Exact duplicate entry groups: ${duplicateGroups.map(group => group.map(index => index + 1).join(', ')).join(' · ')}` : 'No exact duplicate texts found.' }),
+          flaggedIndices.length
+            ? jsx('div', {
+                className: 'flex flex-wrap gap-2',
+                children: flaggedIndices.map(index =>
+                  jsx(ActionButton, {
+                    onClick: () => onSelectEntry(index),
+                    children: `View entry ${index + 1} · ${longIndices.includes(index) ? 'long' : ''}${longIndices.includes(index) && duplicateIndices.includes(index) ? ', ' : ''}${duplicateIndices.includes(index) ? 'exact duplicate' : ''}`
+                  }, index)
+                )
+              })
+            : jsx('p', { children: 'No long or exact duplicate entries to inspect.' })
+        ]
+      })
+    ]
+  })
+}
+
 function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, source }) {
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
@@ -815,6 +858,12 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setAdding(false)
     setDeleteConfirm(false)
     setSelectedText(content)
+  }
+
+  const navigateToDiagnosticEntry = index => {
+    if (!entries[index]) return
+    setSearch('')
+    selectEntry(entries[index].content)
   }
 
   const beginAdd = () => {
@@ -1015,6 +1064,11 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             ]
           })
         ]
+      }),
+      jsx(MemoryDiagnostics, {
+        diagnostics: targetData.diagnostics,
+        targetLabel,
+        onSelectEntry: navigateToDiagnosticEntry
       }),
       jsxs('div', {
         className: 'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
