@@ -1,0 +1,17 @@
+{
+  "name": "magi-desktop-interaction-tests",
+  "private": true,
+  "version": "1.7.8",
+  "type": "module",
+  "scripts": {
+    "test:desktop": "vitest run --config vitest.config.mjs"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "jsdom": "29.1.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "vitest": "4.1.12"
+  }
+}

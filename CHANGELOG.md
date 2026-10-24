@@ -2,6 +2,12 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-012: added deterministic React DOM interaction tests for the actual
+  Desktop module using Hermes' Vitest/React Testing Library patterns and a
+  mock SDK/REST context; covers queue decisions, errors, navigation, stored
+  memory CRUD, and compaction preview/cancel/apply. Added CI and local runner,
+  explicit keyboard navigation assertions, and documentation of outstanding
+  interaction features beyond this test-only change.
 - MAGI-020: removed the duplicate pytest pass from `verify.sh`, leaving one
   coverage-instrumented test run while preserving standalone `ci/test.sh`,
   production coverage enforcement, syntax checks, and Hermes plugin admission.

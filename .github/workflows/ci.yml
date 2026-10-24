@@ -29,6 +29,18 @@ jobs:
         with:
           enable-cache: false
 
+      - name: Set up Node for Desktop tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Desktop test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test Desktop interactions
+        run: bash ci/desktop-test.sh
+
       - name: Install pinned Hermes CLI
         shell: bash
         env:
