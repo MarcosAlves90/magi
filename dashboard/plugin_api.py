@@ -10,13 +10,18 @@ of chat sessions. Stored-memory edits delegate persistence to Hermes' own
 from __future__ import annotations
 
 import json
+import os
+import re
 import runpy
 import sys
+import threading
+import uuid
+from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, StrictInt
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, StrictBool, StrictInt
 
 
 _PLUGIN_ID = "magi"
@@ -35,6 +40,9 @@ _MEMORY_CHARS_PER_TOKEN = 2.75
 _TOKEN_ESTIMATE_METHOD = "hermes_memory_budget_2.75_chars_per_token"
 _MEMORY_IMPORT_MAX_BYTES = 1_000_000
 _MEMORY_IMPORT_MAX_ENTRIES = 1_000
+_HISTORY_MAX_RECORDS = 500
+_HISTORY_MAX_BYTES = 256_000
+_HISTORY_LOCK = threading.Lock()
 _RUNTIME_BRIDGE_PATH = (_PLUGIN_ROOT / "runtime_bridge.py").resolve()
 
 
@@ -65,6 +73,10 @@ class MemoryImportPreviewRequest(BaseModel):
 class MemoryImportApplyRequest(MemoryImportPreviewRequest):
     source_fingerprints: Dict[str, str]
     confirmed: bool = False
+
+
+class HistoryClearRequest(BaseModel):
+    confirmed: StrictBool = False
 
 
 class PendingDecisionRequest(BaseModel):
@@ -183,6 +195,96 @@ def _memory_import_plans(store: Any, body: MemoryImportPreviewRequest) -> Dict[s
             "additions": additions,
         }
     return plans
+
+
+def _history_path() -> Path:
+    home = resolve_hermes_home(override=str(_settings().get("home_override") or ""))
+    return home / "plugin-data" / _PLUGIN_ID / "history.jsonl"
+
+
+def _read_history(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        if not isinstance(record.get("id"), str) or not re.fullmatch(r"[0-9a-f]{16}", record["id"]):
+            continue
+        if record.get("operation") not in {"approve", "reject", "add", "edit", "delete", "compact", "import"}:
+            continue
+        if record.get("target") not in {"memory", "user", "multiple"}:
+            continue
+        if record.get("result") not in {"success", "failure", "partial"}:
+            continue
+        if record.get("error") not in {None, "operation_failed"}:
+            continue
+        if not isinstance(record.get("timestamp"), str):
+            continue
+        try:
+            parsed_timestamp = datetime.fromisoformat(record["timestamp"].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed_timestamp.tzinfo is None or parsed_timestamp.utcoffset() != timezone.utc.utcoffset(parsed_timestamp):
+            continue
+        records.append({
+            "id": record["id"],
+            "timestamp": record["timestamp"],
+            "operation": record["operation"],
+            "target": record["target"],
+            "result": record["result"],
+            "error": record["error"],
+        })
+    return records
+
+
+def _record_history(operation: str, target: str, result: str) -> bool:
+    record = {
+        "id": uuid.uuid4().hex[:16],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "operation": operation,
+        "target": target,
+        "result": result,
+        "error": "operation_failed" if result == "failure" else None,
+    }
+    temporary = None
+    try:
+        path = _history_path()
+        temporary = path.with_name(f"{path.name}.{record['id']}.tmp")
+        with _HISTORY_LOCK:
+            records = _read_history(path)
+            records.append(record)
+            records = records[-_HISTORY_MAX_RECORDS:]
+            payload = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in records)
+            while records and len(payload.encode("utf-8")) > _HISTORY_MAX_BYTES:
+                records.pop(0)
+                payload = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in records)
+            path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            os.chmod(path.parent, 0o700)
+            temporary.write_text(payload, encoding="utf-8")
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, path)
+        return True
+    except Exception:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return False
+
+
+def _audit_result(result: Dict[str, Any], operation: str, target: str) -> Dict[str, Any]:
+    outcome = "partial" if result.get("partial") else "success" if result.get("success") else "failure"
+    recorded = _record_history(operation, target, outcome)
+    result["audit_recorded"] = recorded
+    if not recorded:
+        result["audit_warning"] = "The operation completed, but its local audit record could not be saved."
+    return result
 
 
 def _plugin_llm() -> Any:
@@ -384,7 +486,7 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
             output = "Rejected 0 pending memory write(s)."
         if failed:
             output += "\nFailed:\n" + "\n".join(f"  {item}" for item in failed)
-        return {"success": True, "output": output}
+        return _audit_result({"success": True, "partial": bool(failed), "output": output}, action, "multiple" if len(records) > 1 else str(records[0].payload.get("target") or "memory"))
 
     store = _memory_store()
     applied = 0
@@ -414,7 +516,60 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
         output += "\nRemoved entry (re-add anything you still need):\n" + "\n".join(removed)
     if failed:
         output += "\nFailed:\n" + "\n".join(f"  {item}" for item in failed)
-    return {"success": True, "output": output}
+    return _audit_result({"success": True, "partial": bool(failed), "output": output}, action, "multiple" if len(records) > 1 else str(records[0].payload.get("target") or "memory"))
+
+
+@router.get("/history")
+def get_history(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    operation: Optional[str] = None,
+    result: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+) -> Dict[str, Any]:
+    try:
+        start = date.fromisoformat(date_from) if date_from else None
+        end = date.fromisoformat(date_to) if date_to else None
+        if start and end and start > end:
+            raise HTTPException(status_code=400, detail="date_from must not be later than date_to.")
+        records = _read_history(_history_path())
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="History dates must use YYYY-MM-DD.") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Local Magi history is unavailable.") from exc
+    if result not in {None, "success", "failure", "partial"}:
+        raise HTTPException(status_code=400, detail="result must be success, failure, or partial.")
+    filtered = []
+    for record in records:
+        try:
+            event_day = datetime.fromisoformat(record["timestamp"].replace("Z", "+00:00")).date()
+        except (ValueError, TypeError, KeyError):
+            continue
+        if (start and event_day < start) or (end and event_day > end):
+            continue
+        if operation and record["operation"] != operation:
+            continue
+        if result and record["result"] != result:
+            continue
+        filtered.append(record)
+    return {
+        "records": list(reversed(filtered[-limit:])),
+        "retention": {"max_records": _HISTORY_MAX_RECORDS, "max_bytes": _HISTORY_MAX_BYTES},
+    }
+
+
+@router.delete("/history")
+def clear_history(body: HistoryClearRequest) -> Dict[str, Any]:
+    if body.confirmed is not True:
+        raise HTTPException(status_code=400, detail="Explicit confirmation is required to clear history.")
+    try:
+        with _HISTORY_LOCK:
+            _history_path().unlink(missing_ok=True)
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Local Magi history could not be cleared.") from exc
+    return {"success": True}
 
 
 @router.get("/memory")
@@ -457,19 +612,24 @@ def apply_memory_import(body: MemoryImportApplyRequest) -> Dict[str, Any]:
     for target, plan in plans.items():
         if not plan["additions"]:
             outcomes[target] = {"status": "unchanged", "added_count": 0}
-            continue
-        try:
-            result = store.apply_batch(target, [
-                {"action": "add", "content": entry} for entry in plan["additions"]
-            ])
-        except Exception:
-            result = {"success": False, "error": "Hermes could not apply this target's batch."}
-        if result.get("success"):
-            outcomes[target] = {"status": "applied", "added_count": len(plan["additions"])}
         else:
-            outcomes[target] = {"status": "failed", "error": result.get("error", "Import failed.")}
+            try:
+                result = store.apply_batch(target, [
+                    {"action": "add", "content": entry} for entry in plan["additions"]
+                ])
+            except Exception:
+                result = {"success": False, "error": "Hermes could not apply this target's batch."}
+            if result.get("success"):
+                outcomes[target] = {"status": "applied", "added_count": len(plan["additions"])}
+            else:
+                outcomes[target] = {"status": "failed", "error": result.get("error", "Import failed.")}
     succeeded = sum(value["status"] in {"applied", "unchanged"} for value in outcomes.values())
     failed = any(value["status"] == "failed" for value in outcomes.values())
+    audit_result = "partial" if failed and succeeded else "failure" if failed else "success"
+    for target, outcome in outcomes.items():
+        outcome["audit_recorded"] = _record_history("import", target, audit_result)
+        if not outcome["audit_recorded"]:
+            outcome["audit_warning"] = "Magi could not save this target's local audit record."
     return {
         "success": not failed,
         "partial": failed and succeeded > 0,
@@ -484,13 +644,15 @@ def replace_stored_memory(target: str, body: MemoryEditRequest) -> Dict[str, Any
         raise HTTPException(status_code=400, detail="target must be 'memory' or 'user'.")
 
     store = _memory_store()
-    result = store.replace(target, body.old_text, body.content, matched_entry=body.old_text)
+    result = _audit_result(store.replace(target, body.old_text, body.content, matched_entry=body.old_text), "edit", target)
     if not result.get("success"):
         raise HTTPException(status_code=409, detail=result)
 
     return {
         "success": True,
         "result": result,
+        "audit_recorded": result["audit_recorded"],
+        "audit_warning": result.get("audit_warning"),
         "target": _memory_target(store, target),
     }
 
@@ -501,13 +663,15 @@ def add_stored_memory(target: str, body: MemoryAddRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="target must be 'memory' or 'user'.")
 
     store = _memory_store()
-    result = store.add(target, body.content)
+    result = _audit_result(store.add(target, body.content), "add", target)
     if not result.get("success"):
         raise HTTPException(status_code=409, detail=result)
 
     return {
         "success": True,
         "result": result,
+        "audit_recorded": result["audit_recorded"],
+        "audit_warning": result.get("audit_warning"),
         "target": _memory_target(store, target),
     }
 
@@ -518,13 +682,15 @@ def delete_stored_memory(target: str, body: MemoryDeleteRequest) -> Dict[str, An
         raise HTTPException(status_code=400, detail="target must be 'memory' or 'user'.")
 
     store = _memory_store()
-    result = store.remove(target, body.old_text, matched_entry=body.old_text)
+    result = _audit_result(store.remove(target, body.old_text, matched_entry=body.old_text), "delete", target)
     if not result.get("success"):
         raise HTTPException(status_code=409, detail=result)
 
     return {
         "success": True,
         "result": result,
+        "audit_recorded": result["audit_recorded"],
+        "audit_warning": result.get("audit_warning"),
         "target": _memory_target(store, target),
     }
 
@@ -590,12 +756,14 @@ def apply_memory_compaction(target: str, body: MemoryCompactionApplyRequest) -> 
         {"action": "add", "content": entry}
         for entry in proposed
     ]
-    result = store.apply_batch(target, operations)
+    result = _audit_result(store.apply_batch(target, operations), "compact", target)
     if not result.get("success"):
         raise HTTPException(status_code=409, detail=result)
 
     return {
         "success": True,
         "result": result,
+        "audit_recorded": result["audit_recorded"],
+        "audit_warning": result.get("audit_warning"),
         "target": _memory_target(store, target),
     }

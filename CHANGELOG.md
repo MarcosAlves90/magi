@@ -2,6 +2,10 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-016: added a profile-local, metadata-only history for mutating Magi
+  actions, with bounded retention, restricted file permissions, date/operation/
+  outcome filters, confirmed clearing, and explicit warnings when audit writes
+  fail. History is not an undo log and does not include external Hermes changes.
 - MAGI-015: added local versioned JSON export and a bounded import preview
   for Memory, User, or both. Imports validate schema, duplicates, Hermes entry
   delimiters and character budgets, then add only missing entries through

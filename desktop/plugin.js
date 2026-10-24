@@ -785,7 +785,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const result = await applyMemoryImport(transferPreview.payload, transferPreview.preview.source_fingerprints)
-      const statuses = Object.entries(result?.outcomes || {}).map(([id, outcome]) => `${id}: ${outcome.status}${outcome.added_count ? ` (${outcome.added_count} added)` : ''}${outcome.error ? ` — ${outcome.error}` : ''}`)
+      const statuses = Object.entries(result?.outcomes || {}).map(([id, outcome]) => `${id}: ${outcome.status}${outcome.added_count ? ` (${outcome.added_count} added)` : ''}${outcome.error ? ` — ${outcome.error}` : ''}${outcome.audit_warning ? ` — ${outcome.audit_warning}` : ''}`)
       setFeedback({ kind: result?.success ? 'success' : 'error', message: statuses.join(' · ') || 'Import completed.' })
       if (result?.success) setTransferPreview(null)
       await stored.refetch()
@@ -812,7 +812,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const result = await addStoredMemory(target, content)
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory entry added.' })
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory entry added.', result?.audit_warning].filter(Boolean).join(' ') })
       setAdding(false)
       setSelectedText(content)
       await stored.refetch()
@@ -832,7 +832,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const result = await saveStoredMemory(target, current.content, draft)
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory entry updated.' })
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory entry updated.', result?.audit_warning].filter(Boolean).join(' ') })
       setSelectedText(draft.trim())
       setDeleteConfirm(false)
       await stored.refetch()
@@ -856,7 +856,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const result = await deleteStoredMemory(target, current.content)
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory entry removed.' })
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory entry removed.', result?.audit_warning].filter(Boolean).join(' ') })
       setSelectedText('')
       setDeleteConfirm(false)
       await stored.refetch()
@@ -905,7 +905,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
         compactionPreview.source_fingerprint,
         compactionPreview.proposed_entries
       )
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory compaction applied.' })
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory compaction applied.', result?.audit_warning].filter(Boolean).join(' ') })
       setCompactionPreview(null)
       setSelectedText('')
       await stored.refetch()
@@ -1407,6 +1407,91 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   })
 }
 
+function HistoryPage({ loadHistory, clearHistory, source }) {
+  const [operation, setOperation] = useState('')
+  const [result, setResult] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [clearConfirm, setClearConfirm] = useState(false)
+  const [feedback, setFeedback] = useState(null)
+  const history = useQuery({
+    queryKey: [source, 'history', operation, result, dateFrom, dateTo],
+    queryFn: () => loadHistory({ operation, result, dateFrom, dateTo }),
+    refetchInterval: 10_000
+  })
+  const clear = async () => {
+    if (!clearConfirm) {
+      setClearConfirm(true)
+      return
+    }
+    try {
+      await clearHistory()
+      setClearConfirm(false)
+      setFeedback('Local Magi history cleared.')
+      await history.refetch()
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const records = history.data?.records || []
+  return jsxs('main', {
+    className: 'flex h-full min-h-0 flex-col overflow-auto',
+    children: [
+      jsxs('header', {
+        className: 'flex flex-wrap items-center gap-3 border-b border-(--ui-stroke-secondary) px-4 py-3',
+        children: [
+          jsxs('div', { className: 'mr-auto', children: [
+            jsx('h1', { className: 'text-base font-semibold', children: 'Magi action history' }),
+            jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'Metadata-only audit of actions started in Magi. This is not an undo log and does not include changes made directly in Hermes.' })
+          ] }),
+          jsx(ActionButton, { disabled: history.isFetching, onClick: () => history.refetch(), children: 'Refresh history' }),
+          jsx(ActionButton, { tone: clearConfirm ? 'danger' : 'default', disabled: history.isFetching, onClick: clear, children: clearConfirm ? 'Confirm clear history' : 'Clear history' })
+        ]
+      }),
+      jsx('div', { className: 'flex flex-wrap items-end gap-3 border-b border-(--ui-stroke-secondary) px-4 py-3', children: [
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'From' }, 'label'),
+          jsx('input', { type: 'date', 'aria-label': 'History from date', value: dateFrom, onChange: event => setDateFrom(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
+        ] }),
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'To' }, 'label'),
+          jsx('input', { type: 'date', 'aria-label': 'History to date', value: dateTo, onChange: event => setDateTo(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
+        ] }),
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'Operation' }, 'label'),
+          jsx('select', { 'aria-label': 'History operation', value: operation, onChange: event => setOperation(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
+            jsx('option', { value: '', children: 'All operations' }, 'all'),
+            ...['approve', 'reject', 'add', 'edit', 'delete', 'compact', 'import'].map(item => jsx('option', { value: item, children: item }, item))
+          ] }, 'select')
+        ] }),
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'Result' }, 'label'),
+          jsx('select', { 'aria-label': 'History result', value: result, onChange: event => setResult(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
+            jsx('option', { value: '', children: 'All results' }, 'all'),
+            ...['success', 'failure', 'partial'].map(item => jsx('option', { value: item, children: item }, item))
+          ] }, 'select')
+        ] })
+      ] }),
+      feedback ? jsx('p', { role: 'status', className: 'px-4 py-2 text-xs', children: feedback }) : null,
+      history.error ? jsx('p', { role: 'alert', className: 'px-4 py-2 text-xs text-(--ui-danger,#f87171)', children: 'Local history could not be loaded.' }) : null,
+      jsx('section', { className: 'min-h-0 flex-1 overflow-auto p-4', children: records.length
+        ? jsx('ol', { className: 'space-y-2', children: records.map(record => {
+          const action = ({ add: 'Added', edit: 'Edited', delete: 'Deleted', compact: 'Compacted', import: 'Imported', approve: 'Approved', reject: 'Rejected' })[record.operation] || record.operation
+          const target = record.target === 'memory' ? 'MEMORY.md' : record.target === 'user' ? 'USER.md' : record.target
+          return jsx('li', { className: 'rounded-md border border-(--ui-stroke-secondary) px-3 py-2 text-sm', children: [
+            jsx('div', { className: 'font-medium', children: `${action} · ${target}` }, 'summary'),
+            jsx('div', { className: 'mt-1 text-xs', children: `Result: ${record.result}` }, 'result'),
+            jsx('div', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: `${new Date(record.timestamp).toLocaleString()} · ${record.id}` }, 'meta'),
+            record.error ? jsx('div', { className: 'mt-1 text-xs text-(--ui-danger,#f87171)', children: record.error }, 'error') : null
+          ] }, record.id)
+        }) })
+        : jsx('p', { className: 'text-sm text-(--ui-text-tertiary)', children: history.isFetching ? 'Loading history…' : 'No Magi action history matches these filters.' })
+      })
+    ]
+  })
+}
+
+
 function MagiPage(props) {
   const [mode, setMode] = useState('pending')
   return jsxs('div', {
@@ -1427,7 +1512,8 @@ function MagiPage(props) {
             className: 'ml-auto flex gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
             children: [
               ['pending', 'Pending writes', 'Review queue'],
-              ['stored', 'Stored memory', 'Durable context']
+              ['stored', 'Stored memory', 'Durable context'],
+              ['history', 'History', 'Local audit']
             ].map(([id, label, hint]) =>
               jsx(SegmentedChoice, {
                 onClick: () => setMode(id),
@@ -1449,7 +1535,7 @@ function MagiPage(props) {
         children:
           mode === 'pending'
             ? jsx(PendingWritesPage, { ...props, onOpenStoredMemory: () => setMode('stored') })
-            : jsx(StoredMemoryPage, {
+            : mode === 'stored' ? jsx(StoredMemoryPage, {
                 loadStoredMemory: props.loadStoredMemory,
                 saveStoredMemory: props.saveStoredMemory,
                 addStoredMemory: props.addStoredMemory,
@@ -1459,7 +1545,7 @@ function MagiPage(props) {
                 previewMemoryImport: props.previewMemoryImport,
                 applyMemoryImport: props.applyMemoryImport,
                 source: props.source
-              })
+              }) : jsx(HistoryPage, { loadHistory: props.loadHistory, clearHistory: props.clearHistory, source: props.source })
       })
     ]
   })
@@ -1474,6 +1560,15 @@ export default {
     const loadRecords = () => ctx.rest('/records')
     const loadDetail = id => ctx.rest(`/records/${encodeURIComponent(id)}`)
     const loadStoredMemory = () => ctx.rest('/memory')
+    const loadHistory = filters => {
+      const query = new URLSearchParams()
+      if (filters.operation) query.set('operation', filters.operation)
+      if (filters.result) query.set('result', filters.result)
+      if (filters.dateFrom) query.set('date_from', filters.dateFrom)
+      if (filters.dateTo) query.set('date_to', filters.dateTo)
+      return ctx.rest(`/history?${query.toString()}`)
+    }
+    const clearHistory = () => ctx.rest('/history', { method: 'DELETE', body: { confirmed: true } })
     const saveStoredMemory = (target, oldText, content) =>
       ctx.rest(`/memory/${encodeURIComponent(target)}`, {
         method: 'PUT',
@@ -1514,6 +1609,7 @@ export default {
         body: { action }
       })
       if (!parsed?.success) throw new Error(parsed?.error || `${action} failed.`)
+      if (parsed.audit_warning) parsed.output = [parsed.output, parsed.audit_warning].filter(Boolean).join('\n')
       return parsed
     }
 
@@ -1527,6 +1623,8 @@ export default {
             loadRecords,
             loadDetail,
             loadStoredMemory,
+            loadHistory,
+            clearHistory,
             saveStoredMemory,
             addStoredMemory,
             deleteStoredMemory,

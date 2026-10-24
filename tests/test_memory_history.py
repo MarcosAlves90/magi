@@ -1,0 +1,121 @@
+import json
+import stat
+
+from test_desktop import FakeMemoryStore, client_for, load_api, stage
+
+
+def _client(monkeypatch, store=None):
+    api = load_api()
+    memory_store = store or FakeMemoryStore(memory=["initial"], user=["profile"])
+    monkeypatch.setattr(api, "_memory_store", lambda: memory_store)
+    return client_for(api), api, memory_store
+
+
+def test_magi_memory_action_records_metadata_without_content_and_supports_filters(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    client, _, store = _client(monkeypatch)
+    secret_content = "private fact that must not enter the audit log"
+
+    history_response = client.get("/history")
+    assert history_response.status_code == 200
+    response = client.post("/memory/memory/entries", json={"content": secret_content})
+    assert response.status_code == 200
+    assert response.json()["audit_recorded"] is True
+    history = client.get("/history?operation=add&result=success&date_from=2020-01-01")
+    assert history.status_code == 200
+    event = history.json()["records"][0]
+    assert event["operation"] == "add"
+    assert event["target"] == "memory"
+    assert event["result"] == "success"
+    assert event["id"] and event["timestamp"]
+    raw_history = (tmp_path / "plugin-data" / "magi" / "history.jsonl").read_text()
+    assert secret_content not in raw_history
+    assert store.memory_entries[-1] == secret_content
+
+
+def test_memory_edits_and_deletes_are_audited_without_raw_entries(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    client, _, store = _client(monkeypatch)
+    client.put("/memory/user", json={"old_text": "profile", "content": "updated private profile"})
+    client.request("DELETE", "/memory/user/entries", json={"old_text": "updated private profile"})
+    records = client.get("/history").json()["records"]
+    assert [record["operation"] for record in records] == ["delete", "edit"]
+    assert all(record["target"] == "user" for record in records)
+    assert "updated private profile" not in (tmp_path / "plugin-data" / "magi" / "history.jsonl").read_text()
+    assert store.user_entries == []
+
+
+def test_pending_rejection_is_audited_but_external_store_changes_are_not(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    stage(tmp_path, "pending123", {"action": "add", "target": "memory", "content": "pending secret"})
+    client, api, store = _client(monkeypatch)
+    response = client.post("/records/pending123/decision", json={"action": "reject"})
+    assert response.status_code == 200
+    store.memory_entries.append("external Hermes change")
+    records = client.get("/history").json()["records"]
+    assert len(records) == 1
+    assert records[0]["operation"] == "reject"
+    assert "pending secret" not in str(records)
+    assert "external Hermes change" not in str(records)
+
+
+def test_history_is_bounded_filters_and_requires_confirmation_to_clear(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    client, api, _ = _client(monkeypatch)
+    monkeypatch.setattr(api, "_HISTORY_MAX_RECORDS", 2)
+    for index in range(3):
+        assert client.post("/memory/memory/entries", json={"content": f"entry {index}"}).status_code == 200
+    history = client.get("/history?operation=add&result=success&limit=2")
+    assert len(history.json()["records"]) == 2
+    assert history.json()["retention"]["max_records"] == 2
+    rejected = client.request("DELETE", "/history", json={"confirmed": False})
+    assert rejected.status_code == 400
+    cleared = client.request("DELETE", "/history", json={"confirmed": True})
+    assert cleared.status_code == 200
+    assert cleared.json()["success"] is True
+    assert client.get("/history").json()["records"] == []
+
+
+def test_history_failure_is_reported_separately_from_successful_memory_write(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    client, api, store = _client(monkeypatch)
+    monkeypatch.setattr(api, "_history_path", lambda: (_ for _ in ()).throw(OSError("private path")))
+
+    response = client.post("/memory/memory/entries", json={"content": "still stored"})
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["audit_recorded"] is False
+    assert "could not be saved" in response.json()["audit_warning"]
+    assert store.memory_entries[-1] == "still stored"
+
+
+def test_history_filters_permissions_and_rejects_malformed_metadata(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    client, _, _ = _client(monkeypatch)
+    assert client.post("/memory/memory/entries", json={"content": "not for the audit"}).status_code == 200
+
+    history_path = tmp_path / "plugin-data" / "magi" / "history.jsonl"
+    record = json.loads(history_path.read_text().splitlines()[0])
+    assert stat.S_IMODE(history_path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(history_path.stat().st_mode) == 0o600
+
+    variants = [
+        {**record, "id": "invalid"},
+        {**record, "operation": "other"},
+        {**record, "target": "other"},
+        {**record, "result": "other"},
+        {**record, "error": "raw exception text"},
+        {**record, "timestamp": "not-a-timestamp"},
+        {**record, "timestamp": "2026-10-23T12:00:00"},
+        {**record, "raw_content": "private"},
+    ]
+    history_path.write_text("{invalid json}\n" + "\n".join(json.dumps(item) for item in variants))
+
+    filtered = client.get("/history?operation=add&result=success")
+    assert filtered.status_code == 200
+    assert len(filtered.json()["records"]) == 1
+    assert "raw_content" not in filtered.text
+    assert client.get("/history?date_from=invalid").status_code == 400
+    assert client.get("/history?date_from=2026-02-01&date_to=2026-01-01").status_code == 400
+    assert client.get("/history?result=unknown").status_code == 400

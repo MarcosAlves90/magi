@@ -1,0 +1,199 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "feat(history): record Magi memory actions locally (MAGI-016)"
+  },
+  "scope": {
+    "allowed_paths": [
+      "dashboard/plugin_api.py",
+      "desktop/plugin.js",
+      "tests/test_memory_history.py",
+      "tests/desktop/magi.history.test.jsx",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_memory_history.py",
+      "tests/desktop/magi.history.test.jsx"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-016: expose a bounded, profile-local, privacy-safe history of actions initiated by Magi, with filters and confirmed clearing.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Record Magi-initiated operations with operation, target, UTC timestamp, random correlation identifier, outcome, and redacted error; never store raw memory content, prompts, tokens, or secrets."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Persist history beneath the active Hermes profile's plugin-data/magi directory, enforce bounded retention and file permissions, and offer explicit confirmed clearing."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Expose history query filters for date, operation, and result; distinguish audit history from undo and from external Hermes changes."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Audit logging failure must be surfaced as an auditability limitation without falsely claiming that the operation itself failed or that it was recorded."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "A successful Magi write creates a local record containing metadata only, with no raw entry content.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Date, operation, and outcome filters work; retention remains bounded; clear requires confirmation.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "A history write failure is visibly reported separately from the native operation result; external Hermes changes are not attributed to Magi.",
+        "requirements": [
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "History never contains memory entry text, imported/exported content, AI prompts, tokens, credentials, or raw exception messages."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "History presented as undo, complete record of all Hermes changes, or proof that all actions are auditable."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Only structured outcomes from mutating Magi backend operations; read-only queries and external changes are not recorded as Magi actions."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Filtered bounded history entries, clear result, and explicit audit-recorded/audit-warning status."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "History persistence failures do not convert a completed native operation into a claimed failure; the response and UI disclose that audit logging did not succeed."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "1326a3dfda9d343aff25128c731be88e3d2c9979",
+    "base_tree": "18cda2c017a726be4790455872ac3b18bff2b5e8",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "54a22a1dd9ba99d8b1d5e7f33aedbe9df361cce8e3007ddf2edbdaa0dd09c0e4"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "verify.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "verify.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "uv",
+        "run",
+        "--with",
+        "pytest\u003e=8,\u003c10",
+        "--with",
+        "fastapi\u003e=0.115,\u003c1",
+        "--with",
+        "httpx\u003e=0.27,\u003c1",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_memory_history.py",
+        "--rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 360,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "assert 404 == 200"
+    ]
+  }
+}
