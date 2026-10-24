@@ -1,7 +1,6 @@
 # Changelog
 
-## 1.7.8 — 2026-10-17
-
+## 1.8.0 — 2026-10-23
 
 - MAGI-011: pending bulk decisions now show per-record results in a collapsible,
   accessible panel with separate applied, rejected, failed and reconciliation
@@ -108,6 +107,9 @@
 - Added focused regressions for public-API-only compaction, concurrent add and
   remove behavior, and disk-backed Hermes transactions, with the original
   1.7.8 manifest, preview limits, and other plugin capabilities unchanged.
+
+## 1.7.8 — 2026-10-17
+
 - Removed the process-global module alias from the LLM context bridge and
   resolved the active Agent bridge by its plugin file, rejecting ambiguous or
   unavailable contexts.

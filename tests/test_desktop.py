@@ -243,12 +243,25 @@ def test_magi_workspace_label_and_compaction_icon():
 def test_readme_version_and_two_accessible_local_screenshots():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    matrix = (ROOT / "docs/hermes-compatibility-matrix.md").read_text(encoding="utf-8")
+    memory_compatibility = (ROOT / "docs/hermes-memory-compatibility.md").read_text(encoding="utf-8")
     current_version = next(
         line.partition(":")[2].strip() for line in manifest.splitlines()
         if line.startswith("version:")
     )
-    assert current_version == "1.7.8"
+    assert current_version == "1.8.0"
+    assert package["version"] == current_version
+    assert lock["version"] == current_version
+    assert lock["packages"][""]["version"] == current_version
     assert f"**Current version:** {current_version}" in readme
+    assert f"# Hermes compatibility checks for Magi {current_version}" in matrix
+    assert f"# Hermes memory compatibility: Magi {current_version}" in memory_compatibility
+    release_notes = changelog.split(f"## {current_version} — 2026-10-23", 1)[1].split("## 1.7.8 —", 1)[0]
+    assert all(f"MAGI-{task}" in release_notes for task in ("001", "009", "011", "015", "019", "020"))
+    assert "## 1.7.8 — 2026-10-17" in changelog
     assert "docs/screenshots/magi-dashboard.png" not in readme
 
     screenshots = (
