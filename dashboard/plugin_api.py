@@ -9,8 +9,11 @@ of chat sessions. Stored-memory edits delegate persistence to Hermes' own
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import runpy
+import secrets
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -35,6 +38,7 @@ router = APIRouter()
 _MEMORY_CHARS_PER_TOKEN = 2.75
 _TOKEN_ESTIMATE_METHOD = "hermes_memory_budget_2.75_chars_per_token"
 _RUNTIME_BRIDGE_PATH = (_PLUGIN_ROOT / "runtime_bridge.py").resolve()
+_PROCESS_APPLIED_MARKERS: set[str] = set()
 
 
 class MemoryEditRequest(BaseModel):
@@ -147,6 +151,50 @@ def _pending_delimiter_error(payload: Dict[str, Any]) -> str | None:
     return None
 
 
+def _reconciliation_path(review: Any, record: Any) -> Path:
+    """Bind a content-free marker to the profile, pending path and exact record."""
+    record_bytes = json.dumps(
+        record.data, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    key = hashlib.sha256(
+        str(record.path.resolve()).encode("utf-8") + b"\0" + record_bytes
+    ).hexdigest()
+    return review.home / "plugins" / "magi" / "reconciliation" / f"{key}.json"
+
+
+def _requires_reconciliation(review: Any, record: Any) -> bool:
+    path = _reconciliation_path(review, record)
+    return str(path) in _PROCESS_APPLIED_MARKERS or path.exists()
+
+
+def _mark_applied(review: Any, record: Any) -> str | None:
+    """Write best-effort metadata before attempting to remove the pending file."""
+    path = _reconciliation_path(review, record)
+    _PROCESS_APPLIED_MARKERS.add(str(path))
+    temp = path.with_name(path.name + f".{secrets.token_hex(8)}.tmp")
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with temp.open("x", encoding="utf-8") as stream:
+            json.dump({"state": "applied_pending_cleanup", "schema_version": 1}, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, path)
+        return None
+    except OSError:
+        return "Reconciliation marker could not be persisted."
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _clear_applied(review: Any, record: Any) -> None:
+    path = _reconciliation_path(review, record)
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass  # A stale marker cannot reapply a proposal whose file is gone.
+    _PROCESS_APPLIED_MARKERS.discard(str(path))
+
+
 def _estimate_tokens(text: str) -> int:
     return int(round(len(text) / _MEMORY_CHARS_PER_TOKEN)) if text else 0
 
@@ -255,6 +303,12 @@ def _record_target_status(record: Any, store: Any) -> Dict[str, Any]:
         }
 
     entries = store.memory_entries if target == "memory" else store.user_entries
+    if payload.get("action") == "add" and payload.get("content") in entries:
+        return {
+            "state": "ambiguous", "can_apply": False,
+            "missing_count": 0, "destructive_count": 0,
+            "message": "This content is already stored. The pending add may have been applied; reconcile or reject it before retrying.",
+        }
     operations = payload.get("operations") if payload.get("action") == "batch" else [payload]
     operations = operations if isinstance(operations, list) else []
     destructive = [
@@ -316,24 +370,34 @@ def _record_summary(record: Any, target_status: Dict[str, Any] | None = None) ->
 
 
 def _target_status_for_records(records: List[Any]) -> Dict[str, Dict[str, Any]]:
+    review = _review()
     try:
         store = _memory_store()
     except Exception:
         return {
             record.id: {
-                "state": "unknown",
+                "state": "reconciliation_required" if _requires_reconciliation(review, record) else "unknown",
                 "can_apply": False,
                 "missing_count": 0,
                 "destructive_count": 0,
-                "message": "Stored memory is unavailable for verification. Approval is disabled; rejection remains possible.",
+                "message": (
+                    "Memory may already have been applied; reconcile or reject this pending proposal."
+                    if _requires_reconciliation(review, record)
+                    else "Stored memory is unavailable for verification. Approval is disabled; rejection remains possible."
+                ),
             }
             for record in records
         }
-    review = _review()
     statuses = {}
     for record in records:
         errors, _warnings = review.validate_record(record)
-        if errors:
+        if _requires_reconciliation(review, record):
+            statuses[record.id] = {
+                "state": "reconciliation_required", "can_apply": False,
+                "missing_count": 0, "destructive_count": 0,
+                "message": "Memory was applied but proposal cleanup was uncertain. Reconcile the current memory and reject this proposal; do not approve again.",
+            }
+        elif errors:
             statuses[record.id] = {
                 "state": "unverifiable", "can_apply": False,
                 "missing_count": 0, "destructive_count": 0,
@@ -417,6 +481,7 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
         if action == "reject":
             try:
                 record.path.unlink()
+                _clear_applied(review, record)
                 rejected += 1
                 complete += 1
                 items.append({"id": record.id, "status": "rejected"})
@@ -425,6 +490,13 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
                 failed += 1
                 errors.append(f"{record.id}: {error}")
                 items.append({"id": record.id, "status": "failed", "error": error})
+            continue
+
+        if _requires_reconciliation(review, record):
+            error = "This proposal may already have been applied; reconcile or reject it before retrying."
+            failed += 1
+            errors.append(f"{record.id}: {error}")
+            items.append({"id": record.id, "status": "failed", "error": error})
             continue
 
         validation_errors, _warnings = review.validate_record(record)
@@ -459,14 +531,20 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
             continue
 
         applied += 1
+        marker_error = _mark_applied(review, record)
         overwritten.extend(f"  {record.id}: {text}" for text in _changed_entries(result, "replaced"))
         removed.extend(f"  {record.id}: {text}" for text in _changed_entries(result, "removed"))
         try:
             record.path.unlink()
+            _clear_applied(review, record)
             complete += 1
             items.append({"id": record.id, "status": "applied"})
         except Exception as exc:
-            error = f"Memory applied, but pending proposal cleanup failed ({type(exc).__name__}). Reconcile before retrying."
+            error = (
+                f"Memory applied, but pending proposal cleanup failed ({type(exc).__name__}). "
+                "Reconcile before retrying."
+                + (f" {marker_error}" if marker_error else "")
+            )
             failed += 1
             errors.append(f"{record.id}: {error}")
             items.append({"id": record.id, "status": "applied_cleanup_failed", "error": error})

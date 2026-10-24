@@ -2,6 +2,13 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-004: after a native pending approval, Magi records a content-free,
+  profile-scoped reconciliation marker before removing the pending file.
+  Uncertain cleanup prevents repeat approval across backend reloads; duplicate
+  pending additions already present in memory are also flagged as ambiguous.
+  Rejection clears the pending record and marker without replaying a write.
+  The journal is best-effort across crashes and does not provide exactly-once
+  atomicity between Hermes memory and Magi's proposal queue.
 - MAGI-003: pending proposals that are malformed, missing destructive
   `matched_entry` pins or otherwise unverifiable are rejected before native
   approval. Memory-store read errors disable approval; bulk operations still

@@ -36,6 +36,8 @@ Decision responses report `outcome: complete | partial | failed`, counts (`attem
 
 Before approval, Magi validates each pending proposal's structure and checks destructive `matched_entry` pins against the currently readable target. Malformed, missing and unverifiable proposals cannot be approved, but may be rejected. **Approve all** attempts individually eligible records and reports blocked records in the partial result. Checks in Magi are preconditions before the native Hermes operation, not an atomic snapshot guarantee; concurrent changes can still cause a native rejection.
 
+If a pending proposal remains after its memory mutation succeeds, Magi stores a content-free, profile-local marker under `plugins/magi/reconciliation/` and blocks subsequent approvals of that exact proposal. Already-stored pending additions are marked ambiguous even without a marker. Inspect Stored memory before explicitly rejecting such a pending proposal. This is a conservative recovery safeguard: a process crash between the Hermes write and Magi's marker is still possible, and raw modifications by other writers may be indistinguishable from a previous approval. Magi does not guarantee exactly-once execution across these independent stores.
+
 ## Configuration
 
 Set these options in the Magi plugin settings:

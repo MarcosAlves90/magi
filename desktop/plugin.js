@@ -528,7 +528,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                       [['action', 'Pending action filter', [['', 'All actions'], ['add', 'Add'], ['replace', 'Replace'], ['remove', 'Remove'], ['batch', 'Batch']]],
                         ['target', 'Pending target filter', [['', 'Both stores'], ['memory', 'Memory'], ['user', 'User']]],
                         ['origin', 'Pending origin filter', [['', 'All origins'], ...origins.map(value => [value, value === 'background_review' ? 'Automatic review' : value === 'foreground' ? 'Foreground' : value])]],
-                        ['state', 'Pending status filter', [['', 'All statuses'], ['ready', 'Ready'], ['missing', 'Missing'], ['unverifiable', 'Unverifiable'], ['unknown', 'Unknown']]]].map(([key, label, options]) =>
+                        ['state', 'Pending status filter', [['', 'All statuses'], ['ready', 'Ready'], ['missing', 'Missing'], ['unverifiable', 'Unverifiable'], ['ambiguous', 'Already stored / ambiguous'], ['reconciliation_required', 'Reconciliation required'], ['unknown', 'Unknown']]]].map(([key, label, options]) =>
                         jsx('select', {
                           'aria-label': label,
                           value: filters[key],

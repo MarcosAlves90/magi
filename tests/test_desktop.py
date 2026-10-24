@@ -584,6 +584,72 @@ def test_backend_decision_reports_applied_cleanup_failed(monkeypatch, tmp_path):
     assert (tmp_path / "pending/memory/cleanup.json").exists()
 
 
+def test_backend_applied_cleanup_failure_blocks_reapproval_after_reload(monkeypatch, tmp_path):
+    stage(tmp_path, "uncertain", {"action": "add", "target": "memory", "content": "durable"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    store = FakeMemoryStore()
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    native_calls = []
+
+    def apply(payload, active_store):
+        native_calls.append(payload)
+        return active_store.add(payload["target"], payload["content"])
+
+    monkeypatch.setattr(api, "_apply_pending_memory", apply)
+    original_unlink = Path.unlink
+
+    def deny(path, *args, **kwargs):
+        if path.name == "uncertain.json":
+            raise PermissionError("cleanup error")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny)
+    first = client_for(api).post("/records/uncertain/decision", json={"action": "approve"}).json()
+    assert first["items"][0]["status"] == "applied_cleanup_failed"
+    assert len(native_calls) == 1
+
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    monkeypatch.setattr(api, "_apply_pending_memory", apply)
+    status = client_for(api).get("/records").json()["records"][0]["target_status"]
+    assert status["state"] == "reconciliation_required"
+    assert status["can_apply"] is False
+    second = client_for(api).post("/records/uncertain/decision", json={"action": "approve"}).json()
+    assert second["outcome"] == "failed"
+    assert second["items"][0]["status"] == "failed"
+    assert len(native_calls) == 1
+    assert store.memory_entries == ["durable"]
+
+    journal = tmp_path / "plugins" / "magi" / "reconciliation"
+    entries = list(journal.glob("*.json"))
+    assert len(entries) == 1
+    assert "durable" not in entries[0].read_text(encoding="utf-8")
+    assert "content" not in entries[0].read_text(encoding="utf-8")
+
+    monkeypatch.setattr(Path, "unlink", original_unlink)
+    rejected = client_for(api).post("/records/uncertain/decision", json={"action": "reject"}).json()
+    assert rejected["success"] is True
+    assert not list(journal.glob("*.json"))
+
+
+def test_backend_detects_ambiguous_add_that_already_exists(monkeypatch, tmp_path):
+    stage(tmp_path, "duplicate", {"action": "add", "target": "user", "content": "already exists"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(user=["already exists"]))
+    native_calls = []
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: native_calls.append(args))
+    client = client_for(api)
+    status = client.get("/records/duplicate").json()["record"]["target_status"]
+    assert status["state"] == "ambiguous"
+    assert status["can_apply"] is False
+    response = client.post("/records/duplicate/decision", json={"action": "approve"}).json()
+    assert response["outcome"] == "failed"
+    assert native_calls == []
+    assert client.post("/records/duplicate/decision", json={"action": "reject"}).json()["success"] is True
+
+
 def test_backend_decision_reports_partial_rejection(monkeypatch, tmp_path):
     stage(tmp_path, "keep", {"action": "add", "target": "memory", "content": "a"})
     stage(tmp_path, "remove", {"action": "add", "target": "memory", "content": "b"}, created=2)
