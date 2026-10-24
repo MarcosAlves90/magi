@@ -1600,7 +1600,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
         loading: stored.isLoading || stored.isFetching
       }),
       jsxs('div', {
-        className: 'shrink-0 space-y-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
+        className: 'shrink-0 space-y-1.5 border-b border-(--ui-stroke-secondary) px-3 py-2',
         children: [
           jsxs('div', {
             className: 'flex flex-wrap items-center gap-2',
@@ -1636,28 +1636,30 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             ]
           }),
           jsxs('div', {
-            className: 'flex flex-wrap items-start gap-2',
+            role: 'group',
+            'aria-label': 'Memory actions and data handling',
+            className: 'flex flex-wrap items-center gap-x-2 gap-y-1',
             children: [
               jsxs('div', {
                 role: 'group',
                 'aria-label': 'Memory transfer',
-                className: 'flex flex-wrap items-center gap-2',
+                className: 'flex flex-wrap items-center gap-1',
                 children: [
                   jsx('a', {
                     role: 'button', 'aria-disabled': importing || !stored.data,
                     tabIndex: importing || !stored.data ? -1 : 0,
-                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
                     href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
                     download: `magi-memory-${target}.json`, children: `Export ${target}`
                   }, 'export-target'),
                   jsx('a', {
                     role: 'button', 'aria-disabled': importing || !stored.data,
                     tabIndex: importing || !stored.data ? -1 : 0,
-                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
                     href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
                     download: 'magi-memory-both.json', children: 'Export both stores'
                   }, 'export-both'),
-                  jsx(ActionButton, { disabled: importing || !stored.data, onClick: () => importFileInput.current?.click(), children: 'Import JSON' }, 'import'),
+                  jsx(ActionButton, { disabled: importing || !stored.data, onClick: () => importFileInput.current?.click(), className: 'px-2 py-1 text-[0.6875rem]', children: 'Import JSON' }, 'import'),
                   jsx('input', {
                     ref: importFileInput, type: 'file', accept: 'application/json,.json',
                     'aria-label': 'Import memory JSON', tabIndex: -1, className: 'sr-only', onChange: previewImportFile
@@ -1667,10 +1669,11 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               jsxs('div', {
                 role: 'group',
                 'aria-label': 'Memory AI actions',
-                className: 'flex flex-wrap items-center gap-2',
+                className: 'flex flex-wrap items-center gap-1',
                 children: [
                   jsx(ActionButton, {
             tone: 'primary',
+            className: 'px-2 py-1 text-[0.6875rem]',
             disabled: compacting || applyingCompaction || saving || deleting || !targetData.count || isDirty,
             onClick: compact,
             title: 'Create a shorter draft for review. Stored memory changes only if you apply the proposal.',
@@ -1698,25 +1701,19 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             })
           }),
                   jsx(ActionTooltipButton, {
+                    className: 'px-2 py-1 text-[0.6875rem]',
                     disabled: analyzing || compacting || applyingCompaction || saving || deleting || !targetData.count,
                     onClick: analyze,
                     tooltip: 'Sends the selected memory to the configured AI model for suggestions. Nothing is applied automatically.',
                     children: analyzing ? 'Analyzing…' : 'Review memory with AI'
-                  }, 'review'),
-                  jsx('p', {
-                    role: 'note',
-                    className: 'w-full text-xs text-(--ui-text-tertiary)',
-                    style: { flexBasis: '100%' },
-                    children: 'These actions send the selected memory to Hermes’ configured AI model. Review suggestions and compaction proposals yourself; nothing is changed automatically.'
-                  }, 'privacy')
+                  }, 'review')
                 ]
               }, 'ai'),
               jsx('p', {
                 role: 'note',
-                className: 'w-full text-xs text-(--ui-text-tertiary)',
-                style: { flexBasis: '100%' },
-                children: 'Exports may contain private information. Magi creates downloads locally and does not upload export files. Imports are previewed and require confirmation before writing.'
-              }, 'transfer-privacy')
+                className: 'min-w-64 flex-1 text-[0.6875rem] leading-tight text-(--ui-text-tertiary)',
+                children: 'Selected memory is sent to Hermes’ configured AI; suggestions require review and are never auto-applied. Exports may contain private data; downloads stay local and Magi does not upload export files. Imports are previewed and require confirmation.'
+              }, 'data-handling')
             ]
           })
         ]

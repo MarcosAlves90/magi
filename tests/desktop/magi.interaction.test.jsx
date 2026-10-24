@@ -150,6 +150,21 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     expect(await screen.findByText(/Entry sizes \(characters\)/)).toBeTruthy()
   })
 
+  it('keeps transfer and AI controls in one compact accessible region with their safety notice', async () => {
+    const { mount } = fixture()
+    mount()
+    fireEvent.click(btn('Stored memory Durable context'))
+    await screen.findByRole('heading', { name: 'Stored memory' })
+
+    const toolbar = screen.queryByRole('group', { name: 'Memory actions and data handling' })
+    expect(toolbar, 'all transfer and AI controls share one compact accessible region').toBeTruthy()
+    expect(within(toolbar).getByRole('group', { name: 'Memory transfer' })).toBeTruthy()
+    expect(within(toolbar).getByRole('group', { name: 'Memory AI actions' })).toBeTruthy()
+    expect(within(toolbar).getAllByRole('note')).toHaveLength(1)
+    expect(within(toolbar).getByRole('note').textContent).toMatch(/selected memory.*configured AI.*review.*never auto-applied/i)
+    expect(within(toolbar).getByRole('note').textContent).toMatch(/private data.*stay local.*previewed.*confirmation/i)
+  })
+
   it('activates the real navigation with keyboard Enter and exposes selected state', async () => {
     const { mount } = fixture()
     mount()
