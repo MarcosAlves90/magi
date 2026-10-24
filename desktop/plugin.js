@@ -955,7 +955,7 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry }) {
   })
 }
 
-function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, source, navigationGuard }) {
+function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
@@ -977,6 +977,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [analyzing, setAnalyzing] = useState(false)
   const [transferPreview, setTransferPreview] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [reviewConfirm, setReviewConfirm] = useState(false)
+  const [reviewingPreservation, setReviewingPreservation] = useState(false)
+  const [semanticReport, setSemanticReport] = useState(null)
+  const reviewRequestId = useRef(0)
   const [feedback, setFeedback] = useState(null)
 
   const stored = useQuery({
@@ -1030,6 +1034,9 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const changeProposalEntries = next => {
     setProposalEntries(next)
     setConfirmEdited(false)
+    reviewRequestId.current += 1
+    setSemanticReport(null)
+    setReviewConfirm(false)
   }
 
   const splitProposalEntry = index => {
@@ -1075,6 +1082,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       setDeleteConfirm(false)
       setCompactionPreview(null)
       setOrganizationAnalysis(null)
+      reviewRequestId.current += 1
+      setSemanticReport(null)
+      setReviewingPreservation(false)
+      setReviewConfirm(false)
       setFeedback(null)
     })
   }
@@ -1273,6 +1284,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setCompactionElapsed(0)
     setCompacting(true)
     setCompactionPreview(null)
+    reviewRequestId.current += 1
+    setSemanticReport(null)
+    setReviewingPreservation(false)
+    setReviewConfirm(false)
     setFeedback(null)
     try {
       const preview = await requestCompaction(target)
@@ -1284,6 +1299,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
         return
       }
       setCompactionPreview(preview)
+      setSemanticReport(null)
       setPreviewView('entries')
       setProposalEntries([...(preview.proposed_entries || [])])
       setProposalEditing(false)
@@ -1322,6 +1338,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       )
       setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory compaction applied.', result?.audit_warning].filter(Boolean).join(' ') })
       setCompactionPreview(null)
+      reviewRequestId.current += 1
+      setSemanticReport(null)
+      setReviewingPreservation(false)
+      setReviewConfirm(false)
       setConfirmEdited(false)
       setSelectedText('')
       await stored.refetch()
@@ -1332,6 +1352,27 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       })
     } finally {
       setApplyingCompaction(false)
+    }
+  }
+
+  const checkPreservation = async () => {
+    if (!compactionPreview || isPreviewStale || !proposalValidation?.valid) return
+    const id = ++reviewRequestId.current
+    setReviewConfirm(false)
+    setReviewingPreservation(true)
+    setSemanticReport(null)
+    try {
+      const response = await requestSemanticReview(
+        compactionPreview.target,
+        compactionPreview.source_fingerprint,
+        compactionPreview.source_entries,
+        proposalValidation.normalized
+      )
+      if (reviewRequestId.current === id) setSemanticReport(response.report)
+    } catch (error) {
+      if (reviewRequestId.current === id) setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      if (reviewRequestId.current === id) setReviewingPreservation(false)
     }
   }
 
@@ -1726,6 +1767,42 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                   proposalEditing ? jsx(ActionButton, { onClick: () => changeProposalEntries([...proposalEntries, '']), children: 'Add entry' }) : null
                 ]
               }),
+              semanticReport
+                ? jsxs('section', {
+                    className: 'shrink-0 border-t border-(--ui-stroke-secondary) px-4 py-2 text-xs',
+                    'aria-label': 'Suspicions from AI',
+                    children: [
+                      jsx('h3', { className: 'font-semibold', children: 'Suspicions from AI · not proof of preservation' }),
+                      jsx('p', { className: 'mt-1', children: `Uncertainty: ${semanticReport.overall_uncertainty || 'Unknown; a model cannot certify safety.'}` }),
+                      jsx('div', {
+                        className: 'mt-2 max-h-32 space-y-2 overflow-y-auto',
+                        children: (semanticReport.suspicions || []).length
+                          ? semanticReport.suspicions.map((finding, index) =>
+                            jsxs('article', { className: 'rounded border border-(--ui-stroke-secondary) p-2', children: [
+                              jsx('strong', { children: `${finding.category}: ${finding.description}` }),
+                              jsx('p', { className: 'whitespace-pre-wrap', children: `Original excerpt: ${finding.source_excerpt || '(not supplied)'}` }),
+                              jsx('p', { className: 'whitespace-pre-wrap', children: `Proposed excerpt: ${finding.proposal_excerpt || '(not supplied)'}` }),
+                              jsx('p', { children: `Reason: ${finding.explanation}` })
+                            ] }, index)
+                          ) : jsx('p', { children: 'No issues suspected by this model; this does not establish that all facts were preserved.' })
+                      })
+                    ]
+                  })
+                : null,
+              reviewConfirm
+                ? jsxs('div', {
+                    role: 'alertdialog',
+                    'aria-label': 'AI semantic review confirmation',
+                    className: 'shrink-0 border-t border-(--ui-stroke-secondary) px-4 py-2 text-xs',
+                    children: [
+                      jsx('p', { children: 'This sends the original and edited proposal to the model/provider configured in Hermes. Findings are suspicions, not evidence of completeness. No memory writes occur.' }),
+                      jsx('div', { className: 'mt-2 flex gap-2', children: [
+                        jsx(ActionButton, { tone: 'primary', disabled: reviewingPreservation, onClick: checkPreservation, children: 'Confirm sending to model' }),
+                        jsx(ActionButton, { onClick: () => setReviewConfirm(false), children: 'Cancel review' })
+                      ] })
+                    ]
+                  })
+                : null,
               jsxs('div', {
                 className: 'flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-stroke-secondary) px-4 py-3',
                 children: [
@@ -1736,8 +1813,19 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                     children: applyingCompaction ? 'Applying…' : manuallyEdited && !confirmEdited ? 'Review edited proposal' : manuallyEdited ? 'Confirm edited compaction' : 'Apply compaction'
                   }),
                   jsx(ActionButton, {
+                    disabled: reviewingPreservation || applyingCompaction || isPreviewStale || !proposalValidation?.valid,
+                    onClick: () => setReviewConfirm(true),
+                    children: reviewingPreservation ? 'Reviewing…' : 'Check preservation'
+                  }),
+                  jsx(ActionButton, {
                     disabled: applyingCompaction,
-                    onClick: () => setCompactionPreview(null),
+                    onClick: () => {
+                      reviewRequestId.current += 1
+                      setCompactionPreview(null)
+                      setReviewConfirm(false)
+                      setSemanticReport(null)
+                      setReviewingPreservation(false)
+                    },
                     children: 'Cancel preview'
                   }),
                   jsx('span', {
@@ -2083,6 +2171,7 @@ function MagiPage(props) {
                 previewMemoryImport: props.previewMemoryImport,
                 applyMemoryImport: props.applyMemoryImport,
                 analyzeOrganization: props.analyzeOrganization,
+                requestSemanticReview: props.requestSemanticReview,
                 source: props.source,
                 navigationGuard
               }) : jsx(HistoryPage, { loadHistory: props.loadHistory, clearHistory: props.clearHistory, source: props.source })
@@ -2136,6 +2225,14 @@ export default {
         method: 'POST',
         body: { source_fingerprint: sourceFingerprint, entries }
       })
+    const requestSemanticReview = async (target, sourceFingerprint, sourceEntries, proposedEntries) => {
+      const parsed = await ctx.rest(`/memory/${encodeURIComponent(target)}/compact/review`, {
+        method: 'POST',
+        body: { source_fingerprint: sourceFingerprint, source_entries: sourceEntries, proposed_entries: proposedEntries }
+      })
+      if (!parsed?.success) throw new Error(parsed?.error || 'Preservation review failed.')
+      return parsed
+    }
     const previewMemoryImport = payload =>
       ctx.rest('/memory/import/preview', { method: 'POST', body: payload })
     const applyMemoryImport = (payload, sourceFingerprints) =>
@@ -2180,6 +2277,7 @@ export default {
             previewMemoryImport,
             applyMemoryImport,
             analyzeOrganization,
+            requestSemanticReview,
             runDecision,
             source: ctx.source
           })

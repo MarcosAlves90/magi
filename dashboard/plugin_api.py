@@ -33,6 +33,7 @@ MagiReview = _core["MagiReview"]
 resolve_hermes_home = _core["resolve_hermes_home"]
 build_memory_compaction_preview = _core["build_memory_compaction_preview"]
 build_memory_organization_analysis = _core["build_memory_organization_analysis"]
+review_memory_compaction_preservation = _core["review_memory_compaction_preservation"]
 memory_source_fingerprint = _core["memory_source_fingerprint"]
 has_embedded_entry_delimiter = _core["has_embedded_entry_delimiter"]
 _memory_compaction_budgets = _core["_memory_compaction_budgets"]
@@ -67,6 +68,12 @@ class MemoryDeleteRequest(BaseModel):
 class MemoryCompactionApplyRequest(BaseModel):
     source_fingerprint: str
     entries: List[str]
+
+
+class MemoryCompactionReviewRequest(BaseModel):
+    source_fingerprint: str
+    source_entries: List[str]
+    proposed_entries: List[str]
 
 
 class MemoryImportPreviewRequest(BaseModel):
@@ -936,6 +943,37 @@ def preview_memory_compaction(target: str) -> Dict[str, Any]:
         return {"success": False, "error": f"AI compaction unavailable: {exc}"}
     model = str(_settings().get("compaction_model") or "").strip() or None
     return build_memory_compaction_preview(llm, target, entries, _entry_delimiter(), model=model)
+
+
+@router.post("/memory/{target}/compact/review")
+def review_memory_compaction(target: str, body: MemoryCompactionReviewRequest) -> Dict[str, Any]:
+    """Explicit read-only semantic review. This route never applies a proposal."""
+    if target not in {"memory", "user"}:
+        raise HTTPException(status_code=400, detail="target must be 'memory' or 'user'.")
+
+    store = _memory_store()
+    current = list(store.memory_entries if target == "memory" else store.user_entries)
+    if current != body.source_entries or memory_source_fingerprint(current) != body.source_fingerprint:
+        raise HTTPException(status_code=409, detail="Stored memory changed; generate a fresh preview before requesting a review.")
+
+    proposed = [entry.strip() for entry in body.proposed_entries]
+    delimiter = _entry_delimiter()
+    source_chars = len(delimiter.join(current))
+    max_chars, _ = _memory_compaction_budgets(source_chars, 1)
+    if (not proposed or any(not entry or delimiter in entry for entry in proposed)
+            or len(set(proposed)) != len(proposed)
+            or len(proposed) > _memory_compaction_max_entries(len(current))
+            or len(delimiter.join(proposed)) >= source_chars
+            or len(delimiter.join(proposed)) > max_chars):
+        raise HTTPException(status_code=400, detail="Review requires a valid, shorter compaction proposal.")
+
+    try:
+        llm = _plugin_llm()
+        model = str(_settings().get("compaction_model") or "").strip() or None
+        report = review_memory_compaction_preservation(llm, target, current, proposed, model=model)
+    except Exception:
+        raise HTTPException(status_code=503, detail="AI preservation review unavailable; proposal and memory were not changed.") from None
+    return {"success": True, "target": target, "source_fingerprint": body.source_fingerprint, "report": report}
 
 
 @router.post("/memory/{target}/compact")

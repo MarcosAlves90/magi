@@ -50,7 +50,9 @@
   creation-date filters, with an explicit clear action and filtered/global
   totals. Invalid dates are labeled unknown; bulk approval/rejection remains
   explicitly scoped to the entire queue, even with filters active (MAGI-010).
-
+- Added an explicitly authorized, optional AI preservation review of compaction
+  snapshots with quoted evidence, omission/distortion/ambiguity suspicions and
+  uncertainty labeling. Review failures never apply or alter proposals (MAGI-009).
 
 - MAGI-017: added an explicit, read-only AI organization analysis for stored
   memory. Suggestions cite exact original text, expose uncertainty, discard
