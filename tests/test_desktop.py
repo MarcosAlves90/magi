@@ -965,6 +965,8 @@ def test_backend_lists_stored_memory_for_both_targets(monkeypatch):
     # additional read-only diagnostics separately.
     assert body["targets"]["memory"].pop("diagnostics")["entry_count"] == 2
     assert body["targets"]["user"].pop("diagnostics")["entry_count"] == 1
+    assert body["targets"]["memory"].pop("source_fingerprint") == api._source_fingerprint(store.memory_entries)
+    assert body["targets"]["user"].pop("source_fingerprint") == api._source_fingerprint(store.user_entries)
     assert body == {
         "targets": {
             "memory": {

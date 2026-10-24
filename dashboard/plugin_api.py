@@ -279,6 +279,7 @@ def _memory_target(store: Any, target: str) -> Dict[str, Any]:
         "estimated_tokens": int(round(used_chars / _MEMORY_CHARS_PER_TOKEN)),
         "estimated_token_limit": int(round(char_limit / _MEMORY_CHARS_PER_TOKEN)),
         "token_estimate_method": _TOKEN_ESTIMATE_METHOD,
+        "source_fingerprint": _source_fingerprint(list(entries)),
         "entries": [{"index": index, "content": entry} for index, entry in enumerate(entries)],
         "diagnostics": _memory_diagnostics(entries, used_chars, char_limit),
     }

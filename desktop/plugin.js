@@ -974,6 +974,8 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     () => compactionPreview ? buildCompactionDiff(compactionPreview.source_entries || [], compactionPreview.proposed_entries || []) : [],
     [compactionPreview]
   )
+  const currentPreviewFingerprint = compactionPreview && stored.data?.targets?.[compactionPreview.target]?.source_fingerprint
+  const isPreviewStale = Boolean(compactionPreview && currentPreviewFingerprint && currentPreviewFingerprint !== compactionPreview.source_fingerprint)
 
   useEffect(() => {
     if (!adding) setDraft(current?.content || '')
@@ -1100,6 +1102,9 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       }
       setCompactionPreview(preview)
       setPreviewView('entries')
+      // The polling snapshot may predate this preview; refresh once to compare
+      // against data at least as recent as the request (no extra AI call).
+      await stored.refetch()
     } catch (error) {
       setFeedback({
         kind: 'error',
@@ -1112,6 +1117,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
 
   const applyPreview = async () => {
     if (!compactionPreview) return
+    if (isPreviewStale) return
     setApplyingCompaction(true)
     setFeedback(null)
     try {
@@ -1319,6 +1325,15 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               jsxs('div', {
                 className: 'shrink-0 px-4 pt-3',
                 children: [
+                  isPreviewStale ? jsxs('div', {
+                    className: 'mb-2 flex flex-wrap items-center gap-2 text-xs text-(--ui-danger,#f87171)',
+                    role: 'alert',
+                    children: [
+                      jsx('strong', { children: 'Preview outdated' }),
+                      jsx('span', { children: 'Stored memory changed since the reviewed snapshot.' }),
+                      jsx(ActionButton, { disabled: compacting || applyingCompaction, onClick: compact, children: 'Create a new preview' })
+                    ]
+                  }) : null,
                   jsxs('div', {
                     className: 'flex flex-wrap items-start gap-2',
                     children: [
@@ -1380,7 +1395,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 children: [
                   jsx(ActionButton, {
                     tone: 'primary',
-                    disabled: applyingCompaction,
+                    disabled: applyingCompaction || isPreviewStale,
                     onClick: applyPreview,
                     children: applyingCompaction ? 'Applying…' : 'Apply compaction'
                   }),
