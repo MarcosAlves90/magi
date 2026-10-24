@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Redesigned the Desktop workspace with a full-width memory list/editor, always-visible usage estimates and common actions, responsive review panes, inline history filters, and explicit accessible confirmations. Existing memory, transfer, AI, pending-write, and audit safeguards remain intact.
+
 ## 1.8.0 — 2026-10-23
 
 - Simplified the Desktop workspace with progressive disclosures for advanced

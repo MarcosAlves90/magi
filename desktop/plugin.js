@@ -158,7 +158,8 @@ function classifyCompactionFailure(error) {
 
 const CONTROL_TRANSITION = 'transition-all duration-100 ease-out motion-reduce:transition-none'
 const PANEL_TRANSITION = 'transition-[background-color,border-color,opacity] duration-150 ease-out motion-reduce:transition-none'
-const RESIZABLE_ENTRY_VIEWER = 'h-[48vh] min-h-40 max-h-[72vh] flex-none resize-y overflow-auto'
+const RESIZABLE_ENTRY_VIEWER = 'min-h-40 max-h-[72vh] resize-y overflow-auto'
+
 
 function StatusDot({ tone = 'default' }) {
   const toneClass =
@@ -458,10 +459,11 @@ function OverviewView({ detail }) {
   const status = record.target_status || {}
 
   return jsxs('div', {
-    className: `${RESIZABLE_ENTRY_VIEWER} m-3 p-4 animate-in fade-in-0 duration-150`,
+    className: `${RESIZABLE_ENTRY_VIEWER} m-3 min-h-0 flex-1 p-4 animate-in fade-in-0 duration-150`,
+    style: { flex: '1 1 0%', minHeight: '10rem', maxHeight: '72vh', resize: 'vertical', overflowY: 'auto' },
     'data-selectable-text': 'true',
     'data-resizable-entry-viewer': 'true',
-    title: 'Drag the lower edge or corner to resize this entry viewer.',
+    title: 'Drag the lower edge to resize this entry viewer.',
     children: [
       jsxs('section', {
         className: 'mb-4 rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) p-4',
@@ -485,7 +487,10 @@ function OverviewView({ detail }) {
         ]
       }),
       jsx('div', {
-        className: 'grid gap-2 sm:grid-cols-2 xl:grid-cols-4',
+        className: 'grid gap-2',
+        style: {
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 11rem), 1fr))'
+        },
         children: [
           jsx(MetaField, { label: 'Action', value: record.action }, 'action'),
           jsx(MetaField, { label: 'Target', value: record.target }, 'target'),
@@ -508,15 +513,28 @@ function OverviewView({ detail }) {
   })
 }
 
+function useCompactViewport() {
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const update = () => setCompact(window.innerWidth < 768)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return compact
+}
+
 function PendingWritesPage({
   loadRecords, loadDetail, runDecision, source, onOpenStoredMemory,
   decisionReport, setDecisionReport, feedback, setFeedback, bulkConfirm, setBulkConfirm
 }) {
+  const compactViewport = useCompactViewport()
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState({ ...EMPTY_PENDING_FILTERS })
   const [filtersOpen, setFiltersOpen] = useState(false)
   const pendingFiltersId = useId()
   const [bulkActionsOpen, setBulkActionsOpen] = useState(false)
+  const bulkActionsId = useId()
   const [selected, setSelected] = useState('')
   const [view, setView] = useState('overview')
   const [busyAction, setBusyAction] = useState('')
@@ -615,7 +633,7 @@ function PendingWritesPage({
   }
 
   return jsxs('div', {
-    className: 'flex h-full min-h-0 flex-col',
+    className: 'flex h-full min-h-0 flex-col overflow-auto',
     children: [
       jsxs('header', {
         className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-4',
@@ -656,57 +674,65 @@ function PendingWritesPage({
         ]
       }),
       records.length
-        ? jsxs('details', {
-            open: bulkActionsOpen || Boolean(bulkConfirm),
+        ? jsxs('section', {
             className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-2',
             children: [
-              jsx('summary', {
-                onClick: event => { event.preventDefault(); setBulkActionsOpen(open => !open) },
-                className: 'cursor-pointer text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+              jsx('button', {
+                type: 'button',
+                'aria-expanded': Boolean(bulkActionsOpen || bulkConfirm),
+                'aria-controls': bulkActionsId,
+                disabled: Boolean(bulkConfirm),
+                onClick: () => setBulkActionsOpen(open => !open),
+                className: 'text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
                 children: 'Actions for all pending items'
-              }, 'summary'),
-              bulkActionsOpen || bulkConfirm
-                ? bulkConfirm
-                ? jsxs('div', {
-                    className: 'mt-2 flex flex-wrap items-center gap-2 bg-(--chrome-action-hover) px-3 py-2.5 text-xs animate-in fade-in-0 duration-150',
-                    children: [
-                      jsx('span', {
-                        className: 'mr-auto font-medium',
-                        children: `${bulkConfirm === 'approve' ? 'Approve' : 'Reject'} all ${records.length} pending write(s) in the whole queue, including filtered-out proposals?`
-                      }, 'scope'),
-                      jsx(ActionButton, {
-                        tone: bulkConfirm === 'reject' ? 'danger' : 'primary',
-                        disabled: Boolean(busyAction),
-                        onClick: () => decide(bulkConfirm, 'all'),
-                        children: busyAction ? 'Working…' : `Confirm ${bulkConfirm} all`
-                      }, 'confirm'),
-                      jsx(ActionButton, {
-                        disabled: Boolean(busyAction),
-                        onClick: () => setBulkConfirm(''),
-                        children: 'Cancel'
-                      }, 'cancel')
-                    ]
-                  }, 'confirmation')
-                : jsxs('div', {
-                    className: 'mt-2 flex flex-wrap items-center gap-2',
-                    children: [
-                      jsx('span', { className: 'mr-auto text-xs text-(--ui-text-tertiary)', children: 'These actions affect all pending proposals, including proposals hidden by filters.' }, 'scope'),
-                      jsx(ActionButton, {
-                        tone: 'primary',
-                        disabled: Boolean(busyAction),
-                        title: blockedApprovalCount ? 'Valid proposals will be attempted; blocked proposals will be reported individually.' : undefined,
-                        onClick: () => setBulkConfirm('approve'),
-                        children: 'Approve all'
-                      }, 'approve'),
-                      jsx(ActionButton, {
-                        tone: 'danger',
-                        disabled: Boolean(busyAction),
-                        onClick: () => setBulkConfirm('reject'),
-                        children: 'Reject all'
-                      }, 'reject')
-                    ]
-                  }, 'actions')
-                : null
+              }, 'toggle'),
+              jsxs('div', {
+                id: bulkActionsId,
+                hidden: !(bulkActionsOpen || bulkConfirm),
+                className: 'mt-2',
+                children: [
+                  bulkConfirm
+                    ? jsxs('div', {
+                        className: 'flex flex-wrap items-center gap-2 bg-(--chrome-action-hover) px-3 py-2.5 text-xs animate-in fade-in-0 duration-150',
+                        children: [
+                          jsx('span', {
+                            className: 'mr-auto font-medium',
+                            children: `${bulkConfirm === 'approve' ? 'Approve' : 'Reject'} all ${records.length} pending write(s) in the whole queue, including filtered-out proposals?`
+                          }, 'scope'),
+                          jsx(ActionButton, {
+                            tone: bulkConfirm === 'reject' ? 'danger' : 'primary',
+                            disabled: Boolean(busyAction),
+                            onClick: () => decide(bulkConfirm, 'all'),
+                            children: busyAction ? 'Working…' : `Confirm ${bulkConfirm} all`
+                          }, 'confirm'),
+                          jsx(ActionButton, {
+                            disabled: Boolean(busyAction),
+                            onClick: () => setBulkConfirm(''),
+                            children: 'Cancel'
+                          }, 'cancel')
+                        ]
+                      }, 'confirmation')
+                    : jsxs('div', {
+                        className: 'flex flex-wrap items-center gap-2',
+                        children: [
+                          jsx('span', { className: 'mr-auto text-xs text-(--ui-text-tertiary)', children: 'These actions affect all pending proposals, including proposals hidden by filters.' }, 'scope'),
+                          jsx(ActionButton, {
+                            tone: 'primary',
+                            disabled: Boolean(busyAction),
+                            title: blockedApprovalCount ? 'Valid proposals will be attempted; blocked proposals will be reported individually.' : undefined,
+                            onClick: () => setBulkConfirm('approve'),
+                            children: 'Approve all'
+                          }, 'approve'),
+                          jsx(ActionButton, {
+                            tone: 'danger',
+                            disabled: Boolean(busyAction),
+                            onClick: () => setBulkConfirm('reject'),
+                            children: 'Reject all'
+                          }, 'reject')
+                        ]
+                      }, 'actions')
+                ]
+              }, 'panel')
             ]
           })
         : null,
@@ -726,10 +752,22 @@ function PendingWritesPage({
             action: jsx(ActionButton, { onClick: onOpenStoredMemory, children: 'Stored memory' })
           })
         : jsxs('div', {
-        className: 'grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(15rem,22rem)_1fr]',
+        role: 'region',
+        'aria-label': 'Pending review workspace',
+        className: 'min-h-0 min-w-0 flex-1 overflow-auto',
+        style: {
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 22rem), 1fr))',
+          gridAutoRows: 'minmax(22rem, 1fr)',
+          minHeight: compactViewport ? '44rem' : 0,
+          minWidth: 0,
+          overflow: 'auto'
+        },
         children: [
           jsxs('aside', {
-            className: 'flex min-h-0 flex-col border-b border-(--ui-stroke-secondary) md:border-b-0 md:border-r',
+            role: 'complementary',
+            'aria-label': 'Pending proposals',
+            className: 'flex min-h-0 min-w-0 flex-col border-b border-(--ui-stroke-secondary)',
             children: [
               jsxs('div', {
                 className: 'p-3',
@@ -846,7 +884,9 @@ function PendingWritesPage({
             ]
           }),
           filtered.length ? jsxs('main', {
-            className: 'flex min-h-0 min-w-0 flex-col overflow-auto',
+            role: 'region',
+            'aria-label': 'Selected proposal',
+            className: 'flex min-h-0 min-w-0 flex-col overflow-hidden',
             children: [
               currentId
                 ? jsxs('div', {
@@ -952,10 +992,11 @@ function PendingWritesPage({
                     ? view === 'overview'
                       ? jsx(OverviewView, { detail: detail.data })
                       : jsx('pre', {
-                          className: `${RESIZABLE_ENTRY_VIEWER} m-3 whitespace-pre-wrap break-words rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) p-4 font-mono text-xs leading-relaxed animate-in fade-in-0 duration-150`,
+                          className: `${RESIZABLE_ENTRY_VIEWER} m-3 min-h-0 flex-1 whitespace-pre-wrap break-words rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) p-4 font-mono text-xs leading-relaxed animate-in fade-in-0 duration-150`,
+                          style: { flex: '1 1 0%', minHeight: '10rem', maxHeight: '72vh', resize: 'vertical' },
                           'data-selectable-text': 'true',
                           'data-resizable-entry-viewer': 'true',
-                          title: 'Drag the lower edge or corner to resize this entry viewer.',
+                          title: 'Drag the lower edge to resize this entry viewer.',
                           children: detail.data[view] || ''
                         })
                     : jsx(EmptyState, {
@@ -976,22 +1017,36 @@ function PendingWritesPage({
   })
 }
 
-function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry }) {
-  if (!diagnostics) return null
-  const longIndices = diagnostics.long_entry_indices || []
-  const duplicateGroups = diagnostics.exact_duplicate_groups || []
+function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry, loading }) {
+  const [open, setOpen] = useState(false)
+  const diagnosticsId = useId()
+  if (!diagnostics && !loading) return null
+  const longIndices = diagnostics?.long_entry_indices || []
+  const duplicateGroups = diagnostics?.exact_duplicate_groups || []
   const duplicateIndices = duplicateGroups.flat()
   const flaggedIndices = [...new Set([...longIndices, ...duplicateIndices])].sort((a, b) => a - b)
-  return jsxs('details', {
-    className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-2 text-xs',
+  return jsxs('section', {
+    className: 'shrink-0 border-b border-(--ui-stroke-secondary)',
     children: [
-      jsxs('summary', {
-        className: 'cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
-        children: ['Memory diagnostics · ', targetLabel, ' · ', longIndices.length, ' long · ', duplicateGroups.length, ' Exact duplicate groups']
+      jsxs('div', {
+        className: 'flex flex-wrap items-center gap-2 px-4 py-2 text-xs',
+        children: [
+          jsx('span', { className: 'mr-auto font-medium', children: diagnostics ? `Diagnostics · ${targetLabel} · ${longIndices.length} long · ${duplicateGroups.length} exact duplicate groups` : `Diagnostics · ${targetLabel} · loading` }),
+          jsx('button', {
+            type: 'button',
+            'aria-expanded': open,
+            'aria-controls': diagnosticsId,
+            onClick: () => setOpen(value => !value),
+            className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+            children: open ? 'Hide diagnostics' : 'Inspect diagnostics'
+          })
+        ]
       }),
       jsxs('div', {
-        className: 'mt-2 space-y-2 text-(--ui-text-tertiary)',
-        children: [
+        id: diagnosticsId,
+        hidden: !open,
+        className: 'space-y-2 px-4 pb-3 text-xs text-(--ui-text-tertiary)',
+        children: diagnostics ? [
           jsx('p', {
             children: 'Read-only, informational text heuristics. Exact duplicates mean identical text, not semantic redundancy; length does not establish quality or contradictions. No AI is used.'
           }),
@@ -1013,18 +1068,15 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry }) {
                 )
               })
             : jsx('p', { children: 'No long or exact duplicate entries to inspect.' })
-        ]
+        ] : [jsx('p', { role: 'status', children: 'Loading read-only diagnostics…' })]
       })
     ]
   })
 }
 
 function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
+  const compactViewport = useCompactViewport()
   const [target, setTarget] = useState('memory')
-  const [usageDetailsOpen, setUsageDetailsOpen] = useState(false)
-  const [transferOpen, setTransferOpen] = useState(false)
-  const [aiToolsOpen, setAiToolsOpen] = useState(false)
-  const compactTooltipId = useId()
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
   const [draftSlots, setDraftSlots] = useState({})
@@ -1476,7 +1528,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   }
 
   return jsxs('div', {
-    className: 'flex h-full min-h-0 flex-col overflow-hidden',
+    className: 'flex h-full min-h-0 flex-col overflow-auto',
     children: [
       jsxs('header', {
         className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-3',
@@ -1507,27 +1559,24 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             role: 'group',
             'aria-label': 'Memory usage summary',
             className: 'mt-2 grid grid-cols-1 gap-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-3 py-2 sm:grid-cols-3',
+            style: {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 13rem), 1fr))',
+              gap: '0.75rem',
+              alignItems: 'center'
+            },
             children: [
               jsx(CompactStat, { label: 'Entries', value: targetData.count ?? 0, detail: targetLabel }, 'entries'),
+              jsx(CompactStat, {
+                label: 'Estimated tokens',
+                value: `~${targetData.estimated_tokens ?? 0}`,
+                detail: `/ ~${targetData.estimated_token_limit ?? 0} budget · tokens estimated`
+              }, 'tokens'),
+              jsx(CompactStat, { label: 'Characters', value: targetData.char_limit ?? 0, detail: 'Maximum character budget' }, 'characters'),
               jsxs('div', {
-                className: 'min-w-0 sm:col-span-2',
+                className: 'min-w-0 border-t border-(--ui-stroke-secondary) pt-2 sm:col-span-3',
+                style: { gridColumn: '1 / -1' },
                 children: [
-                  jsxs('details', {
-                    open: usageDetailsOpen,
-                    className: 'mb-2 border-t border-(--ui-stroke-secondary) pt-2 text-xs',
-                    children: [
-                      jsx('summary', { onClick: event => { event.preventDefault(); setUsageDetailsOpen(open => !open) }, className: 'cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)', children: 'Usage details' }, 'summary'),
-                      usageDetailsOpen
-                        ? jsxs('div', {
-                            className: 'mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2',
-                            children: [
-                              jsx(CompactStat, { label: 'Estimated tokens', value: `~${targetData.estimated_tokens ?? 0}`, detail: `/ ~${targetData.estimated_token_limit ?? 0} budget · tokens estimated` }, 'tokens'),
-                              jsx(CompactStat, { label: 'Characters', value: targetData.char_limit ?? 0, detail: 'Maximum character budget' }, 'characters')
-                            ]
-                          }, 'details')
-                        : null
-                    ]
-                  }, 'usage-details'),
                   jsxs('div', {
                     className: 'flex flex-wrap items-baseline gap-x-2 gap-y-1',
                     children: [
@@ -1547,7 +1596,8 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       jsx(MemoryDiagnostics, {
         diagnostics: targetData.diagnostics,
         targetLabel,
-        onSelectEntry: navigateToDiagnosticEntry
+        onSelectEntry: navigateToDiagnosticEntry,
+        loading: stored.isLoading || stored.isFetching
       }),
       jsxs('div', {
         className: 'shrink-0 space-y-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
@@ -1588,56 +1638,42 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
           jsxs('div', {
             className: 'flex flex-wrap items-start gap-2',
             children: [
-              jsxs('details', {
-                open: transferOpen,
-                className: 'rounded-md border border-(--ui-stroke-secondary) px-2.5 py-2',
+              jsxs('div', {
+                role: 'group',
+                'aria-label': 'Memory transfer',
+                className: 'flex flex-wrap items-center gap-2',
                 children: [
-                  jsx('summary', { onClick: event => { event.preventDefault(); setTransferOpen(open => !open) }, className: 'cursor-pointer text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)', children: 'Transfer memory' }, 'summary'),
-                  transferOpen ? jsxs('div', {
-                    className: 'mt-2 flex flex-wrap items-center gap-2',
-                    children: [
-                      jsx('p', { role: 'note', className: 'basis-full text-xs text-(--ui-text-tertiary)', children: 'Exports may contain private information. Magi creates downloads locally and does not upload export files. Imports are previewed and require confirmation before writing.' }, 'privacy'),
-                      jsx('a', {
-                        role: 'button', 'aria-disabled': importing || !stored.data,
-                        tabIndex: importing || !stored.data ? -1 : 0,
-                        className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
-                        href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
-                        download: `magi-memory-${target}.json`, children: `Export ${target}`
-                      }, 'export-target'),
-                      jsx('a', {
-                        role: 'button', 'aria-disabled': importing || !stored.data,
-                        tabIndex: importing || !stored.data ? -1 : 0,
-                        className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
-                        href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
-                        download: 'magi-memory-both.json', children: 'Export both stores'
-                      }, 'export-both'),
-                      jsx(ActionButton, { disabled: importing || !stored.data, onClick: () => importFileInput.current?.click(), children: 'Import JSON' }, 'import'),
-                      jsx('input', {
-                        ref: importFileInput, type: 'file', accept: 'application/json,.json',
-                        'aria-label': 'Import memory JSON', tabIndex: -1, className: 'sr-only', onChange: previewImportFile
-                      }, 'file')
-                    ]
-                  }, 'controls') : null
+                  jsx('a', {
+                    role: 'button', 'aria-disabled': importing || !stored.data,
+                    tabIndex: importing || !stored.data ? -1 : 0,
+                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+                    href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
+                    download: `magi-memory-${target}.json`, children: `Export ${target}`
+                  }, 'export-target'),
+                  jsx('a', {
+                    role: 'button', 'aria-disabled': importing || !stored.data,
+                    tabIndex: importing || !stored.data ? -1 : 0,
+                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+                    href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
+                    download: 'magi-memory-both.json', children: 'Export both stores'
+                  }, 'export-both'),
+                  jsx(ActionButton, { disabled: importing || !stored.data, onClick: () => importFileInput.current?.click(), children: 'Import JSON' }, 'import'),
+                  jsx('input', {
+                    ref: importFileInput, type: 'file', accept: 'application/json,.json',
+                    'aria-label': 'Import memory JSON', tabIndex: -1, className: 'sr-only', onChange: previewImportFile
+                  }, 'file')
                 ]
               }, 'transfer'),
-              jsxs('details', {
-                open: aiToolsOpen,
-                className: 'rounded-md border border-(--ui-stroke-secondary) px-2.5 py-2',
+              jsxs('div', {
+                role: 'group',
+                'aria-label': 'Memory AI actions',
+                className: 'flex flex-wrap items-center gap-2',
                 children: [
-                  jsx('summary', { onClick: event => { event.preventDefault(); setAiToolsOpen(open => !open) }, className: 'cursor-pointer text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)', children: 'AI tools' }, 'summary'),
-                  aiToolsOpen ? jsxs('div', {
-                    className: 'mt-2 flex flex-wrap items-center gap-2',
-                    children: [
-                      jsx('p', { role: 'note', className: 'basis-full text-xs text-(--ui-text-tertiary)', children: 'These actions send the selected memory to Hermes’ configured AI model. Review suggestions and compaction proposals yourself; nothing is changed automatically.' }, 'privacy'),
-                      jsxs('span', {
-                        className: 'group relative inline-flex',
-                        children: [
-                          jsx('span', {
-                            children: jsx(ActionButton, {
+                  jsx(ActionButton, {
             tone: 'primary',
             disabled: compacting || applyingCompaction || saving || deleting || !targetData.count || isDirty,
             onClick: compact,
-            'aria-describedby': compactTooltipId,
+            title: 'Create a shorter draft for review. Stored memory changes only if you apply the proposal.',
             children: jsxs('span', {
               className: 'inline-flex items-center gap-1.5',
               children: [
@@ -1660,25 +1696,27 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 jsx('span', { children: compacting ? 'Compacting…' : 'Compact with AI' }, 'label')
               ]
             })
-          })
-                          }, 'button'),
-                          jsx('span', {
-                            id: compactTooltipId,
-                            role: 'tooltip',
-                            className: 'pointer-events-none absolute bottom-full left-0 z-10 mb-1 w-56 rounded border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs text-(--ui-text-primary) opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-                            children: 'Create a shorter draft for review. Stored memory changes only if you apply the proposal.'
-                          }, 'tooltip')
-                        ]
-                      }, 'compact'),
-                      jsx(ActionTooltipButton, {
-                        disabled: analyzing || compacting || applyingCompaction || saving || deleting || !targetData.count,
-                        onClick: analyze, tooltip: 'Sends the selected memory to the configured AI model for suggestions. Nothing is applied automatically.',
-                        children: analyzing ? 'Analyzing…' : 'Review memory with AI'
-                      }, 'review')
-                    ]
-                  }, 'controls') : null
+          }),
+                  jsx(ActionTooltipButton, {
+                    disabled: analyzing || compacting || applyingCompaction || saving || deleting || !targetData.count,
+                    onClick: analyze,
+                    tooltip: 'Sends the selected memory to the configured AI model for suggestions. Nothing is applied automatically.',
+                    children: analyzing ? 'Analyzing…' : 'Review memory with AI'
+                  }, 'review'),
+                  jsx('p', {
+                    role: 'note',
+                    className: 'w-full text-xs text-(--ui-text-tertiary)',
+                    style: { flexBasis: '100%' },
+                    children: 'These actions send the selected memory to Hermes’ configured AI model. Review suggestions and compaction proposals yourself; nothing is changed automatically.'
+                  }, 'privacy')
                 ]
-              }, 'ai')
+              }, 'ai'),
+              jsx('p', {
+                role: 'note',
+                className: 'w-full text-xs text-(--ui-text-tertiary)',
+                style: { flexBasis: '100%' },
+                children: 'Exports may contain private information. Magi creates downloads locally and does not upload export files. Imports are previewed and require confirmation before writing.'
+              }, 'transfer-privacy')
             ]
           })
         ]
@@ -1708,7 +1746,8 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       organizationAnalysis
         ? jsxs('section', {
             'aria-label': 'Memory organization suggestions',
-            className: 'shrink-0 max-h-[40vh] overflow-auto border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3',
+            className: 'shrink-0 overflow-auto border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3',
+            style: { maxHeight: '40vh', overflowY: 'auto' },
             children: [
               jsx('h2', { className: 'text-sm font-semibold', children: 'Memory organization suggestions' }),
               jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'AI findings are uncertain suggestions. They have not been applied; possible contradictions may instead reflect dates or context.' }),
@@ -1792,6 +1831,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       compactionPreview
         ? jsxs('section', {
             className: 'flex max-h-[44vh] shrink-0 flex-col overflow-hidden border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) animate-in fade-in-0 duration-150',
+            style: { maxHeight: '44vh' },
             children: [
               jsxs('div', {
                 className: 'shrink-0 px-4 pt-3',
@@ -1962,10 +2002,23 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
           })
         : null,
       jsxs('div', {
-        className: 'grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[minmax(15rem,22rem)_1fr]',
+        role: 'region',
+        'aria-label': 'Stored memory workspace',
+        className: 'min-h-0 min-w-0 flex-1 overflow-auto',
+        style: {
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 22rem), 1fr))',
+          gridAutoRows: 'minmax(22rem, 1fr)',
+          gap: '0.75rem',
+          minHeight: compactViewport ? '44rem' : 0,
+          minWidth: 0,
+          overflow: 'auto'
+        },
         children: [
           jsxs('aside', {
-            className: 'flex min-h-0 flex-col border-b border-(--ui-stroke-secondary) md:border-b-0 md:border-r',
+            role: 'complementary',
+            'aria-label': 'Memory entries',
+            className: 'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-(--ui-stroke-secondary)',
             children: [
               jsxs('div', {
                 className: 'px-3 py-2',
@@ -2022,8 +2075,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             ]
           }),
           adding
-            ? jsxs('main', {
-                className: 'flex min-h-0 min-w-0 flex-col overflow-auto animate-in fade-in-0 duration-150',
+            ? jsxs('section', {
+                role: 'region',
+                'aria-label': 'Memory entry editor',
+                className: 'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-(--ui-stroke-secondary) animate-in fade-in-0 duration-150',
                 children: [
                   jsxs('div', {
                     className: 'flex flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-3',
@@ -2057,9 +2112,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                     },
                     'aria-label': `Add ${target} memory entry`,
                     placeholder: 'Enter a durable memory entry…',
-                    className: `${RESIZABLE_ENTRY_VIEWER} m-3 rounded-lg border border-(--ui-stroke-secondary) bg-transparent p-4 text-sm leading-relaxed outline-none transition-[border-color,background-color] duration-150 focus:border-(--ui-accent) focus:bg-(--chrome-action-hover)`,
+                    className: 'm-3 min-h-0 flex-1 resize-y overflow-auto rounded-lg border border-(--ui-stroke-secondary) bg-transparent p-4 text-sm leading-relaxed outline-none transition-[border-color,background-color] duration-150 focus:border-(--ui-accent) focus:bg-(--chrome-action-hover)',
+                    style: { flex: '1 1 0%', minHeight: '10rem', maxHeight: '72vh', resize: 'vertical' },
                     'data-resizable-entry-viewer': 'true',
-                    title: 'Drag the lower edge or corner to resize this entry editor.',
+                    title: 'Drag the lower edge to resize this memory entry editor.',
                     spellCheck: false
                   }),
                   jsx('div', {
@@ -2073,8 +2129,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 ]
               })
             : current
-              ? jsxs('main', {
-                className: 'flex min-h-0 min-w-0 flex-col overflow-auto animate-in fade-in-0 duration-150',
+              ? jsxs('section', {
+                role: 'region',
+                'aria-label': 'Memory entry editor',
+                className: 'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-(--ui-stroke-secondary) animate-in fade-in-0 duration-150',
                 children: [
                   jsxs('div', {
                     className: 'flex flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-3',
@@ -2114,9 +2172,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                       setDeleteConfirm(false)
                     },
                     'aria-label': `Edit ${target} memory entry`,
-                    className: `${RESIZABLE_ENTRY_VIEWER} m-3 rounded-lg border border-(--ui-stroke-secondary) bg-transparent p-4 text-sm leading-relaxed outline-none transition-[border-color,background-color] duration-150 focus:border-(--ui-accent) focus:bg-(--chrome-action-hover)`,
+                    className: 'm-3 min-h-0 flex-1 resize-y overflow-auto rounded-lg border border-(--ui-stroke-secondary) bg-transparent p-4 text-sm leading-relaxed outline-none transition-[border-color,background-color] duration-150 focus:border-(--ui-accent) focus:bg-(--chrome-action-hover)',
+                    style: { flex: '1 1 0%', minHeight: '10rem', maxHeight: '72vh', resize: 'vertical' },
                     'data-resizable-entry-viewer': 'true',
-                    title: 'Drag the lower edge or corner to resize this entry editor.',
+                    title: 'Drag the lower edge to resize this memory entry editor.',
                     spellCheck: false
                   }),
                   draftConflict
@@ -2135,10 +2194,31 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                   })
                 ]
               })
-              : jsx(EmptyState, {
-                title: `No ${targetLabel} entry selected`,
-                description: 'Choose an entry from the list or add a new durable memory item.',
-                action: jsx(ActionButton, { onClick: beginAdd, children: 'Add entry' })
+              : stored.isLoading
+                ? jsxs('section', {
+                    role: 'region',
+                    'aria-label': 'Memory entry editor',
+                    className: 'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-(--ui-stroke-secondary) p-4',
+                    children: [
+                      jsx('p', { role: 'status', className: 'mb-2 text-xs text-(--ui-text-tertiary)', children: 'Loading stored memory…' }),
+                      jsx('textarea', {
+                        disabled: true,
+                        value: '',
+                        'aria-label': `Edit ${target} memory entry`,
+                        className: 'min-h-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-transparent p-4 text-sm',
+                        style: { flex: '1 1 0%', minHeight: '10rem' }
+                      })
+                    ]
+                  })
+                : jsx('section', {
+                role: 'region',
+                'aria-label': 'Memory entry editor',
+                className: 'flex min-h-0 min-w-0 flex-col justify-center overflow-hidden rounded-lg border border-(--ui-stroke-secondary) p-4',
+                children: jsx(EmptyState, {
+                  title: `No ${targetLabel} entry selected`,
+                  description: 'Choose an entry from the list or add a new durable memory item.',
+                  action: jsx(ActionButton, { onClick: beginAdd, children: 'Add entry' })
+                })
               })
         ]
       })
@@ -2151,10 +2231,33 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
   const [result, setResult] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [filtersOpen, setFiltersOpen] = useState(false)
-  const historyFiltersId = useId()
   const [clearConfirm, setClearConfirm] = useState(false)
+  const [isClearing, setIsClearing] = useState(false)
   const [feedback, setFeedback] = useState(null)
+  const clearHistoryButtonRef = useRef(null)
+  const cancelClearButtonRef = useRef(null)
+  const restoreClearFocus = useRef(false)
+  const clearConfirmationId = useId()
+  useEffect(() => {
+    if (clearConfirm) {
+      restoreClearFocus.current = true
+      cancelClearButtonRef.current?.focus()
+    } else if (restoreClearFocus.current) {
+      restoreClearFocus.current = false
+      clearHistoryButtonRef.current?.focus()
+    }
+  }, [clearConfirm])
+  useEffect(() => {
+    if (!clearConfirm || isClearing) return undefined
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setClearConfirm(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [clearConfirm, isClearing])
   const activeFilterCount = [operation, result, dateFrom, dateTo].filter(Boolean).length
   const history = useQuery({
     queryKey: [source, 'history', operation, result, dateFrom, dateTo],
@@ -2166,13 +2269,16 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
       setClearConfirm(true)
       return
     }
+    setIsClearing(true)
     try {
       await clearHistory()
-      setClearConfirm(false)
       setFeedback('Local Magi history cleared.')
       await history.refetch()
+      setClearConfirm(false)
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsClearing(false)
     }
   }
   const resetFilters = () => {
@@ -2193,27 +2299,46 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
             jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'Metadata-only audit of actions started in Magi. This is not an undo log and does not include changes made directly in Hermes.' })
           ] }),
           jsx(ActionButton, { disabled: history.isFetching, onClick: () => history.refetch(), children: 'Refresh history' }),
-          jsx(ActionButton, { tone: clearConfirm ? 'danger' : 'default', disabled: history.isFetching, onClick: clear, children: clearConfirm ? 'Confirm clear history' : 'Clear history' })
+          jsx(ActionButton, {
+            ref: clearHistoryButtonRef,
+            disabled: history.isFetching || isClearing,
+            'aria-expanded': clearConfirm,
+            'aria-controls': clearConfirmationId,
+            onClick: () => setClearConfirm(true),
+            children: 'Clear history'
+          })
         ]
       }),
+      clearConfirm
+        ? jsxs('section', {
+            id: clearConfirmationId,
+            role: 'region',
+            'aria-label': 'Clear history confirmation',
+            'aria-live': 'polite',
+            tabIndex: -1,
+            className: 'flex flex-wrap items-center gap-3 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3 text-xs',
+            children: [
+              jsx('p', { className: 'mr-auto', children: 'Permanently remove local Magi history metadata? This cannot be undone.' }),
+              jsx(ActionButton, { tone: 'danger', disabled: history.isFetching || isClearing, onClick: clear, children: isClearing ? 'Clearing…' : 'Confirm clear history' }),
+              jsx(ActionButton, { ref: cancelClearButtonRef, disabled: history.isFetching || isClearing, onClick: () => setClearConfirm(false), children: 'Cancel clear' })
+            ]
+          })
+        : null,
       jsxs('div', {
-        className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-2',
+        role: 'group',
+        'aria-label': 'History filters',
+        className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-3',
         children: [
-          jsx('button', {
-            type: 'button',
-            'aria-expanded': filtersOpen,
-            'aria-controls': historyFiltersId,
-            onClick: () => setFiltersOpen(open => !open),
-            className: 'text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
-            children: activeFilterCount ? `Filters · ${activeFilterCount} active` : 'Filters'
-          }, 'toggle'),
           jsxs('div', {
-            id: historyFiltersId,
-            hidden: !filtersOpen,
-            className: 'mt-2',
+            className: 'flex flex-wrap items-end gap-3',
             children: [
               jsxs('div', {
-                className: 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4',
+                className: 'min-w-0 flex-1',
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 12rem), 1fr))',
+                  gap: '0.75rem'
+                },
                 children: [
               jsx('label', { className: 'grid gap-1 text-xs', children: [
                 jsx('span', { children: 'From' }, 'label'),
@@ -2239,9 +2364,10 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
               ] }, 'result')
                 ]
               }, 'filter-fields'),
-              activeFilterCount ? jsx(ActionButton, { onClick: resetFilters, className: 'mt-2', children: 'Reset filters' }, 'reset') : null
+              activeFilterCount ? jsx(ActionButton, { onClick: resetFilters, children: 'Reset filters' }, 'reset') : null,
+              jsx('span', { className: 'text-xs text-(--ui-text-tertiary)', children: activeFilterCount ? `Filters · ${activeFilterCount} active` : 'All history' }, 'count')
             ]
-          }, 'controls')
+          })
         ]
       }),
       feedback ? jsx('p', { role: 'status', className: 'px-4 py-2 text-xs', children: feedback }) : null,

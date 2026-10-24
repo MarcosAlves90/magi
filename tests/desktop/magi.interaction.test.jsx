@@ -39,7 +39,15 @@ function fixture() {
         const targets = {}
         for (const target of ['memory', 'user']) {
           const entries = state.entries[target].map((content, index) => ({ content, index }))
-          targets[target] = { entries, count: entries.length, used_chars: 20, char_limit: 500, usage_percent: 4, estimated_tokens: 10, source_fingerprint: state.fingerprint }
+          targets[target] = {
+            entries, count: entries.length, used_chars: 20, char_limit: 500, usage_percent: 4,
+            estimated_tokens: 10, estimated_token_limit: 100, source_fingerprint: state.fingerprint,
+            diagnostics: {
+              entry_count: entries.length, used_chars: 20, remaining_chars: 480, over_budget_chars: 0,
+              size_distribution: { '0-100': entries.length }, long_entry_indices: [],
+              exact_duplicate_groups: [], long_entry_threshold_chars: 500
+            }
+          }
         }
         return { targets }
       }
@@ -83,6 +91,65 @@ function btn(name) { return screen.getByRole('button', { name: name.includes(' '
 function calls(state, path, method = 'POST') { return state.requests.filter(request => request.path === path && request.method === method) }
 
 describe('Magi actual Desktop rendering and host SDK requests', () => {
+  it('keeps the selected memory editor beside a responsive entry list and fills its pane', async () => {
+    const { mount } = fixture()
+    mount()
+    fireEvent.click(btn('Stored memory Durable context'))
+
+    const workspace = screen.queryByRole('region', { name: 'Stored memory workspace' })
+    expect(workspace, 'responsive stored-memory split layout is exposed in the workspace').toBeTruthy()
+    expect(workspace.style.gridTemplateColumns).toContain('auto-fit')
+    expect(workspace.style.gridTemplateColumns).toContain('minmax')
+    expect(workspace.style.gridAutoRows).toBe('minmax(22rem, 1fr)')
+    expect(workspace.style.overflow).toBe('auto')
+    expect(within(workspace).getByRole('complementary', { name: 'Memory entries' })).toBeTruthy()
+    const editor = within(workspace).getByRole('region', { name: 'Memory entry editor' })
+    const textarea = within(editor).getByRole('textbox', { name: 'Edit memory memory entry' })
+    expect(textarea.style.flex).toContain('1')
+    expect(screen.getByRole('group', { name: 'Memory usage summary' }).style.gridTemplateColumns).toContain('auto-fit')
+  })
+
+  it('keeps stacked review and memory panes usable at narrow viewport widths', async () => {
+    const originalWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    try {
+      const { mount } = fixture()
+      mount()
+      await screen.findAllByText('Save the alpha')
+      const pendingWorkspace = screen.getByRole('region', { name: 'Pending review workspace' })
+      await waitFor(() => expect(pendingWorkspace.style.minHeight).toBe('44rem'))
+      expect(pendingWorkspace.style.overflow).toBe('auto')
+
+      fireEvent.click(btn('Stored memory Durable context'))
+      const memoryWorkspace = await screen.findByRole('region', { name: 'Stored memory workspace' })
+      await waitFor(() => expect(memoryWorkspace.style.minHeight).toBe('44rem'))
+      expect(memoryWorkspace.style.overflow).toBe('auto')
+    } finally {
+      if (originalWidth) Object.defineProperty(window, 'innerWidth', originalWidth)
+      else delete window.innerWidth
+    }
+  })
+
+  it('makes memory estimates, diagnostics, transfer, and AI tools directly discoverable', async () => {
+    const { mount } = fixture()
+    mount()
+    fireEvent.click(btn('Stored memory Durable context'))
+    await screen.findByRole('heading', { name: 'Stored memory' })
+
+    expect(screen.getByText('Estimated tokens')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Inspect diagnostics' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Import JSON' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Export both stores' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Compact with AI' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Review memory with AI' })).toBeTruthy()
+    expect(screen.getByText(/does not upload export files/)).toBeTruthy()
+    const workspace = screen.getByRole('region', { name: 'Stored memory workspace' })
+    expect(workspace.querySelectorAll('details')).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect diagnostics' }))
+    expect(await screen.findByText(/Entry sizes \(characters\)/)).toBeTruthy()
+  })
+
   it('activates the real navigation with keyboard Enter and exposes selected state', async () => {
     const { mount } = fixture()
     mount()
@@ -99,6 +166,9 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     const { mount } = fixture()
     mount()
     await screen.findAllByText('Save the alpha')
+    const pendingWorkspace = screen.getByRole('region', { name: 'Pending review workspace' })
+    expect(pendingWorkspace.style.gridAutoRows).toBe('minmax(22rem, 1fr)')
+    expect(pendingWorkspace.style.overflow).toBe('auto')
 
     expect(screen.queryByRole('combobox', { name: 'Pending action filter' })).toBeNull()
     const filters = screen.getByRole('button', { name: 'Filters' })
@@ -129,9 +199,10 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     expect(screen.getByRole('button', { name: 'Filters' }).getAttribute('aria-expanded')).toBe('true')
 
     expect(screen.queryByRole('button', { name: 'Reject all' })).toBeNull()
-    const bulkActions = screen.getByText('Actions for all pending items')
-    expect(bulkActions.tagName).toBe('SUMMARY')
+    const bulkActions = screen.getByRole('button', { name: 'Actions for all pending items' })
+    expect(bulkActions.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(bulkActions)
+    expect(bulkActions.getAttribute('aria-expanded')).toBe('true')
     expect(btn('Reject all')).toBeTruthy()
     expect(screen.getByText(/including proposals hidden by filters/i)).toBeTruthy()
   })
@@ -164,7 +235,7 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     await waitFor(() => expect(calls(state, '/records/rec-one/decision')).toHaveLength(1))
     expect(calls(state, '/records/rec-one/decision')[0].body).toEqual({ action: 'approve' })
     await screen.findByText('1 pending')
-    fireEvent.click(screen.getByText('Actions for all pending items'))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for all pending items' }))
     fireEvent.click(btn('Reject all'))
     expect(calls(state, '/records/all/decision')).toHaveLength(0)
     fireEvent.click(btn('Cancel'))
@@ -224,7 +295,6 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     mount()
     fireEvent.click(btn('Stored memory Durable context'))
     await screen.findByRole('textbox', { name: 'Edit memory memory entry' })
-    fireEvent.click(screen.getByText('AI tools'))
     fireEvent.click(btn('Compact with AI'))
     expect(await screen.findByText('Condensed fact')).toBeTruthy()
     expect(calls(state, '/memory/memory/compact')).toHaveLength(0)
