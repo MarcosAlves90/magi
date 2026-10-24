@@ -955,7 +955,7 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry }) {
   })
 }
 
-function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, source, navigationGuard }) {
+function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, source, navigationGuard }) {
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
@@ -973,6 +973,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [proposalEntries, setProposalEntries] = useState([])
   const [proposalEditing, setProposalEditing] = useState(false)
   const [confirmEdited, setConfirmEdited] = useState(false)
+  const [organizationAnalysis, setOrganizationAnalysis] = useState(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [transferPreview, setTransferPreview] = useState(null)
+  const [importing, setImporting] = useState(false)
   const [feedback, setFeedback] = useState(null)
 
   const stored = useQuery({
@@ -1070,6 +1074,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       setAdding(false)
       setDeleteConfirm(false)
       setCompactionPreview(null)
+      setOrganizationAnalysis(null)
       setFeedback(null)
     })
   }
@@ -1086,6 +1091,68 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     if (!entries[index]) return
     setSearch('')
     selectEntry(entries[index].content)
+  }
+
+  const exportMemory = selectedTarget => {
+    const selectedTargets = selectedTarget === 'both' ? STORED_TARGETS.map(([id]) => id) : [selectedTarget]
+    const entries = Object.fromEntries(selectedTargets.map(id => [
+      id,
+      (stored.data?.targets?.[id]?.entries || []).map(entry => entry.content)
+    ]))
+    return encodeURIComponent(JSON.stringify({
+      format_version: 1,
+      target: selectedTarget,
+      entries: selectedTarget === 'both' ? entries : entries[selectedTarget]
+    }, null, 2))
+  }
+
+  const previewImportFile = async event => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setFeedback(null)
+    setTransferPreview(null)
+    try {
+      if (file.size > 1_000_000) throw new Error('Import file exceeds the 1 MB limit.')
+      const payload = JSON.parse(await file.text())
+      const preview = await previewMemoryImport(payload)
+      if (!preview?.success) throw new Error(preview?.error || 'Memory import preview failed.')
+      setTransferPreview({ payload, preview })
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const confirmImport = async () => {
+    if (!transferPreview) return
+    setImporting(true)
+    setFeedback(null)
+    try {
+      const result = await applyMemoryImport(transferPreview.payload, transferPreview.preview.source_fingerprints)
+      const statuses = Object.entries(result?.outcomes || {}).map(([id, outcome]) => `${id}: ${outcome.status}${outcome.added_count ? ` (${outcome.added_count} added)` : ''}${outcome.error ? ` — ${outcome.error}` : ''}${outcome.audit_warning ? ` — ${outcome.audit_warning}` : ''}`)
+      setFeedback({ kind: result?.success ? 'success' : 'error', message: statuses.join(' · ') || 'Import completed.' })
+      if (result?.success) setTransferPreview(null)
+      await stored.refetch()
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const analyze = async () => {
+    setAnalyzing(true)
+    setOrganizationAnalysis(null)
+    setFeedback(null)
+    try {
+      const result = await analyzeOrganization(target)
+      if (!result?.success) throw new Error(result?.error || 'AI organization analysis failed; memory was not changed.')
+      setOrganizationAnalysis(result)
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setAnalyzing(false)
+    }
   }
 
   const beginAdd = () => {
@@ -1106,7 +1173,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const result = await addStoredMemory(target, content)
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory entry added.' })
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory entry added.', result?.audit_warning].filter(Boolean).join(' ') })
       setAdding(false)
       setSelectedText(content)
       await stored.refetch()
@@ -1137,9 +1204,8 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const result = await saveStoredMemory(target, current.content, draft)
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory entry updated.' })
-      const savedText = draft.trim()
-      setSelectedText(savedText)
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory entry updated.', result?.audit_warning].filter(Boolean).join(' ') })
+      setSelectedText(draft.trim())
       setDeleteConfirm(false)
       await stored.refetch()
       setDraftSlots(previous => {
@@ -1189,7 +1255,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const result = await deleteStoredMemory(target, current.content)
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory entry removed.' })
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory entry removed.', result?.audit_warning].filter(Boolean).join(' ') })
       setSelectedText('')
       setDeleteConfirm(false)
       await stored.refetch()
@@ -1254,7 +1320,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
         compactionPreview.source_fingerprint,
         proposalEntries
       )
-      setFeedback({ kind: 'success', message: result?.result?.message || 'Memory compaction applied.' })
+      setFeedback({ kind: result?.audit_warning ? 'info' : 'success', message: [result?.result?.message || 'Memory compaction applied.', result?.audit_warning].filter(Boolean).join(' ') })
       setCompactionPreview(null)
       setConfirmEdited(false)
       setSelectedText('')
@@ -1375,6 +1441,34 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               }, id)
             )
           }),
+          jsx('a', {
+            role: 'button',
+            'aria-disabled': importing || !stored.data,
+            tabIndex: importing || !stored.data ? -1 : 0,
+            className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+            href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
+            download: `magi-memory-${target}.json`,
+            children: `Export ${target}`
+          }),
+          jsx('a', {
+            role: 'button',
+            'aria-disabled': importing || !stored.data,
+            tabIndex: importing || !stored.data ? -1 : 0,
+            className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+            href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
+            download: 'magi-memory-both.json',
+            children: 'Export both'
+          }),
+          jsxs('label', {
+            className: 'inline-flex cursor-pointer items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover)',
+            children: [
+              jsx('span', { children: 'Import JSON' }, 'label'),
+              jsx('input', {
+                type: 'file', accept: 'application/json,.json', 'aria-label': 'Import memory JSON',
+                className: 'sr-only', onChange: previewImportFile
+              }, 'input')
+            ]
+          }),
           jsx(ActionButton, {
             disabled: compacting || applyingCompaction || saving || deleting,
             onClick: beginAdd,
@@ -1408,11 +1502,22 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 jsx('span', { children: compacting ? 'Compacting…' : 'Compact with AI' })
               ]
             })
+          }),
+          jsx(ActionButton, {
+            disabled: analyzing || compacting || applyingCompaction || saving || deleting || !targetData.count,
+            onClick: analyze,
+            children: analyzing ? 'Analyzing…' : 'Analyze organization'
           })
         ]
       }),
+      jsx('p', {
+        role: 'note',
+        className: 'border-b border-(--ui-stroke-secondary) px-4 py-2 text-xs text-(--ui-text-tertiary)',
+        children: 'Memory exports may contain private information; Magi creates downloads locally and does not upload export files. AI analysis sends this selected store to the configured model only when you choose Analyze organization; it does not change memory.'
+      }),
       feedback
         ? jsx('div', {
+            role: feedback.kind === 'error' ? 'alert' : 'status',
             className: `shrink-0 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-2.5 text-xs animate-in fade-in-0 duration-150 ${
               feedback.kind === 'error' ? 'text-(--ui-danger,#f87171)' : 'text-(--ui-text-tertiary)'
             }`,
@@ -1429,6 +1534,67 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               jsx(ActionButton, { onClick: () => setPendingNavigation(null), children: 'Continue editing' }),
               jsx(ActionButton, { tone: 'danger', onClick: discardAndContinue, children: 'Discard draft' }),
               jsx(ActionButton, { tone: 'primary', disabled: saving || draftConflict || !draft.trim(), onClick: saveAndContinue, children: 'Save and continue' })
+            ]
+          })
+        : null,
+      organizationAnalysis
+        ? jsxs('section', {
+            'aria-label': 'Memory organization suggestions',
+            className: 'shrink-0 max-h-[40vh] overflow-auto border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3',
+            children: [
+              jsx('h2', { className: 'text-sm font-semibold', children: 'Memory organization suggestions' }),
+              jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'AI findings are uncertain suggestions. They have not been applied; possible contradictions may instead reflect dates or context.' }),
+              organizationAnalysis.discarded_suggestions
+                ? jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: `${organizationAnalysis.discarded_suggestions} suggestion(s) with unsupported sources were discarded.` })
+                : null,
+              organizationAnalysis.suggestions?.length
+                ? jsx('ol', {
+                    className: 'mt-2 space-y-2',
+                    children: organizationAnalysis.suggestions.map((suggestion, index) =>
+                      jsxs('li', {
+                        className: 'rounded-md border border-(--ui-stroke-secondary) p-3 text-xs',
+                        children: [
+                          jsx('div', { className: 'font-semibold capitalize', children: suggestion.kind.replaceAll('_', ' ') }, 'kind'),
+                          jsx('p', { className: 'mt-1', children: suggestion.reason }, 'reason'),
+                          jsx('ul', { className: 'mt-2 space-y-1', children: suggestion.evidence.map((citation, citationIndex) => jsx('li', { className: 'text-(--ui-text-tertiary)', children: `Evidence · entry ${citation.entry_index}: “${citation.quote}”` }, citationIndex)) }, 'evidence'),
+                          jsx('ul', { className: 'mt-2 space-y-1', children: suggestion.entry_indexes.map(entryIndex => {
+                            const sourceEntry = organizationAnalysis.sources?.find(item => item.entry_index === entryIndex)
+                            return sourceEntry ? jsx('li', { className: 'whitespace-pre-wrap break-words rounded bg-(--ui-bg-secondary) p-2', children: `Original entry ${sourceEntry.entry_index}: ${sourceEntry.content}` }, sourceEntry.entry_index) : null
+                          }) }, 'sources'),
+                          jsx('p', { className: 'mt-2 text-(--ui-text-tertiary)', children: `Uncertainty: ${suggestion.uncertainty}` }, 'uncertainty')
+                        ]
+                      }, `${suggestion.kind}:${index}`)
+                    )
+                  })
+                : jsx('p', { className: 'mt-2 text-xs text-(--ui-text-tertiary)', children: 'No source-verified suggestions were returned.' })
+            ]
+          })
+        : null,
+      transferPreview
+        ? jsxs('section', {
+            'aria-label': 'Memory import preview',
+            className: 'shrink-0 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3',
+            children: [
+              jsx('h2', { className: 'text-sm font-semibold', children: 'Import preview · missing entries only' }),
+              jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'Existing entries will be kept. Nothing is written until you confirm. Targets are applied separately and may not be atomic together.' }),
+              Object.entries(transferPreview.preview.targets || {}).map(([id, plan]) =>
+                jsxs('div', {
+                  className: 'mt-2 rounded-md border border-(--ui-stroke-secondary) p-2 text-xs',
+                  children: [
+                    jsx('div', { className: 'font-medium', children: `${id}: ${plan.additions.length} to add · ${plan.skipped_count} already present` }),
+                    plan.additions.length
+                      ? jsx('ul', { className: 'mt-1 list-disc space-y-1 pl-4', children: plan.additions.map((entry, index) => jsx('li', { className: 'whitespace-pre-wrap break-words', children: entry }, `${id}:${index}`)) })
+                      : jsx('p', { className: 'mt-1 text-(--ui-text-tertiary)', children: 'No missing entries.' })
+                  ]
+                }, id)
+              ),
+              jsxs('div', {
+                className: 'mt-3 flex justify-end gap-2',
+                children: [
+                  jsx(ActionButton, { disabled: importing, onClick: () => setTransferPreview(null), children: 'Cancel import' }),
+                  jsx(ActionButton, { tone: 'primary', disabled: importing, onClick: confirmImport, children: importing ? 'Importing…' : 'Confirm import' })
+                ]
+              })
             ]
           })
         : null,
@@ -1765,6 +1931,91 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   })
 }
 
+function HistoryPage({ loadHistory, clearHistory, source }) {
+  const [operation, setOperation] = useState('')
+  const [result, setResult] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [clearConfirm, setClearConfirm] = useState(false)
+  const [feedback, setFeedback] = useState(null)
+  const history = useQuery({
+    queryKey: [source, 'history', operation, result, dateFrom, dateTo],
+    queryFn: () => loadHistory({ operation, result, dateFrom, dateTo }),
+    refetchInterval: 10_000
+  })
+  const clear = async () => {
+    if (!clearConfirm) {
+      setClearConfirm(true)
+      return
+    }
+    try {
+      await clearHistory()
+      setClearConfirm(false)
+      setFeedback('Local Magi history cleared.')
+      await history.refetch()
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const records = history.data?.records || []
+  return jsxs('main', {
+    className: 'flex h-full min-h-0 flex-col overflow-auto',
+    children: [
+      jsxs('header', {
+        className: 'flex flex-wrap items-center gap-3 border-b border-(--ui-stroke-secondary) px-4 py-3',
+        children: [
+          jsxs('div', { className: 'mr-auto', children: [
+            jsx('h1', { className: 'text-base font-semibold', children: 'Magi action history' }),
+            jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'Metadata-only audit of actions started in Magi. This is not an undo log and does not include changes made directly in Hermes.' })
+          ] }),
+          jsx(ActionButton, { disabled: history.isFetching, onClick: () => history.refetch(), children: 'Refresh history' }),
+          jsx(ActionButton, { tone: clearConfirm ? 'danger' : 'default', disabled: history.isFetching, onClick: clear, children: clearConfirm ? 'Confirm clear history' : 'Clear history' })
+        ]
+      }),
+      jsx('div', { className: 'flex flex-wrap items-end gap-3 border-b border-(--ui-stroke-secondary) px-4 py-3', children: [
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'From' }, 'label'),
+          jsx('input', { type: 'date', 'aria-label': 'History from date', value: dateFrom, onChange: event => setDateFrom(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
+        ] }),
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'To' }, 'label'),
+          jsx('input', { type: 'date', 'aria-label': 'History to date', value: dateTo, onChange: event => setDateTo(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
+        ] }),
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'Operation' }, 'label'),
+          jsx('select', { 'aria-label': 'History operation', value: operation, onChange: event => setOperation(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
+            jsx('option', { value: '', children: 'All operations' }, 'all'),
+            ...['approve', 'reject', 'add', 'edit', 'delete', 'compact', 'import'].map(item => jsx('option', { value: item, children: item }, item))
+          ] }, 'select')
+        ] }),
+        jsx('label', { className: 'grid gap-1 text-xs', children: [
+          jsx('span', { children: 'Result' }, 'label'),
+          jsx('select', { 'aria-label': 'History result', value: result, onChange: event => setResult(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
+            jsx('option', { value: '', children: 'All results' }, 'all'),
+            ...['success', 'failure', 'partial'].map(item => jsx('option', { value: item, children: item }, item))
+          ] }, 'select')
+        ] })
+      ] }),
+      feedback ? jsx('p', { role: 'status', className: 'px-4 py-2 text-xs', children: feedback }) : null,
+      history.error ? jsx('p', { role: 'alert', className: 'px-4 py-2 text-xs text-(--ui-danger,#f87171)', children: 'Local history could not be loaded.' }) : null,
+      jsx('section', { className: 'min-h-0 flex-1 overflow-auto p-4', children: records.length
+        ? jsx('ol', { className: 'space-y-2', children: records.map(record => {
+          const action = ({ add: 'Added', edit: 'Edited', delete: 'Deleted', compact: 'Compacted', import: 'Imported', approve: 'Approved', reject: 'Rejected' })[record.operation] || record.operation
+          const target = record.target === 'memory' ? 'MEMORY.md' : record.target === 'user' ? 'USER.md' : record.target
+          return jsx('li', { className: 'rounded-md border border-(--ui-stroke-secondary) px-3 py-2 text-sm', children: [
+            jsx('div', { className: 'font-medium', children: `${action} · ${target}` }, 'summary'),
+            jsx('div', { className: 'mt-1 text-xs', children: `Result: ${record.result}` }, 'result'),
+            jsx('div', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: `${new Date(record.timestamp).toLocaleString()} · ${record.id}` }, 'meta'),
+            record.error ? jsx('div', { className: 'mt-1 text-xs text-(--ui-danger,#f87171)', children: record.error }, 'error') : null
+          ] }, record.id)
+        }) })
+        : jsx('p', { className: 'text-sm text-(--ui-text-tertiary)', children: history.isFetching ? 'Loading history…' : 'No Magi action history matches these filters.' })
+      })
+    ]
+  })
+}
+
+
 function MagiPage(props) {
   const [mode, setMode] = useState('pending')
   const [decisionReport, setDecisionReport] = useState(null)
@@ -1793,7 +2044,8 @@ function MagiPage(props) {
             className: 'ml-auto flex gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
             children: [
               ['pending', 'Pending writes', 'Review queue'],
-              ['stored', 'Stored memory', 'Durable context']
+              ['stored', 'Stored memory', 'Durable context'],
+              ['history', 'History', 'Local audit']
             ].map(([id, label, hint]) =>
               jsx(SegmentedChoice, {
                 onClick: () => selectMode(id),
@@ -1821,16 +2073,19 @@ function MagiPage(props) {
                 bulkConfirm, setBulkConfirm,
                 onOpenStoredMemory: () => setMode('stored')
               })
-            : jsx(StoredMemoryPage, {
+            : mode === 'stored' ? jsx(StoredMemoryPage, {
                 loadStoredMemory: props.loadStoredMemory,
                 saveStoredMemory: props.saveStoredMemory,
                 addStoredMemory: props.addStoredMemory,
                 deleteStoredMemory: props.deleteStoredMemory,
                 requestCompaction: props.requestCompaction,
                 applyCompaction: props.applyCompaction,
+                previewMemoryImport: props.previewMemoryImport,
+                applyMemoryImport: props.applyMemoryImport,
+                analyzeOrganization: props.analyzeOrganization,
                 source: props.source,
                 navigationGuard
-              })
+              }) : jsx(HistoryPage, { loadHistory: props.loadHistory, clearHistory: props.clearHistory, source: props.source })
       })
     ]
   })
@@ -1845,6 +2100,15 @@ export default {
     const loadRecords = () => ctx.rest('/records')
     const loadDetail = id => ctx.rest(`/records/${encodeURIComponent(id)}`)
     const loadStoredMemory = () => ctx.rest('/memory')
+    const loadHistory = filters => {
+      const query = new URLSearchParams()
+      if (filters.operation) query.set('operation', filters.operation)
+      if (filters.result) query.set('result', filters.result)
+      if (filters.dateFrom) query.set('date_from', filters.dateFrom)
+      if (filters.dateTo) query.set('date_to', filters.dateTo)
+      return ctx.rest(`/history?${query.toString()}`)
+    }
+    const clearHistory = () => ctx.rest('/history', { method: 'DELETE', body: { confirmed: true } })
     const saveStoredMemory = (target, oldText, content) =>
       ctx.rest(`/memory/${encodeURIComponent(target)}`, {
         method: 'PUT',
@@ -1872,6 +2136,18 @@ export default {
         method: 'POST',
         body: { source_fingerprint: sourceFingerprint, entries }
       })
+    const previewMemoryImport = payload =>
+      ctx.rest('/memory/import/preview', { method: 'POST', body: payload })
+    const applyMemoryImport = (payload, sourceFingerprints) =>
+      ctx.rest('/memory/import', {
+        method: 'POST',
+        body: { ...payload, source_fingerprints: sourceFingerprints, confirmed: true }
+      })
+    const analyzeOrganization = async target => {
+      const result = await ctx.rest(`/memory/${encodeURIComponent(target)}/organization/analyze`, { method: 'POST' })
+      if (!result?.success) throw new Error(result?.error || 'AI organization analysis failed; memory was not changed.')
+      return result
+    }
     const runDecision = async (action, target) => {
       const parsed = await ctx.rest(`/records/${encodeURIComponent(target)}/decision`, {
         method: 'POST',
@@ -1880,6 +2156,7 @@ export default {
       if (!parsed?.success && !['partial', 'failed'].includes(parsed?.outcome)) {
         throw new Error(parsed?.error || `${action} failed.`)
       }
+      if (parsed.audit_warning) parsed.output = [parsed.output, parsed.audit_warning].filter(Boolean).join('\n')
       return parsed
     }
 
@@ -1893,11 +2170,16 @@ export default {
             loadRecords,
             loadDetail,
             loadStoredMemory,
+            loadHistory,
+            clearHistory,
             saveStoredMemory,
             addStoredMemory,
             deleteStoredMemory,
             requestCompaction,
             applyCompaction,
+            previewMemoryImport,
+            applyMemoryImport,
+            analyzeOrganization,
             runDecision,
             source: ctx.source
           })

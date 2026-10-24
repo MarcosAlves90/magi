@@ -2,6 +2,7 @@
 
 ## 1.7.8 — 2026-10-17
 
+
 - MAGI-011: pending bulk decisions now show per-record results in a collapsible,
   accessible panel with separate applied, rejected, failed and reconciliation
   counters. Failed records still in the queue can be opened without replaying
@@ -49,6 +50,26 @@
   creation-date filters, with an explicit clear action and filtered/global
   totals. Invalid dates are labeled unknown; bulk approval/rejection remains
   explicitly scoped to the entire queue, even with filters active (MAGI-010).
+
+
+- MAGI-017: added an explicit, read-only AI organization analysis for stored
+  memory. Suggestions cite exact original text, expose uncertainty, discard
+  invalid references, and make one bounded request without applying changes.
+- MAGI-016: added a profile-local, metadata-only history for mutating Magi
+  actions, with bounded retention, restricted file permissions, date/operation/
+  outcome filters, confirmed clearing, and explicit warnings when audit writes
+  fail. History is not an undo log and does not include external Hermes changes.
+- MAGI-015: added local versioned JSON export and a bounded import preview
+  for Memory, User, or both. Imports validate schema, duplicates, Hermes entry
+  delimiters and character budgets, then add only missing entries through
+  Hermes' native batch API after explicit confirmation. Per-target partial
+  results and concurrency/atomicity limits are documented.
+- MAGI-014: introduced isolated Hermes compatibility CI jobs pinned to exact
+  SHAs for the 0.21.5 minimum (`v2026.9.24`, Python 3.13), the existing pinned
+  revision and latest stable `v0.22.5`; the two baseline jobs are required and
+  the latest is informational. Added a disposable-profile native Memory/User
+  transaction probe, local-version evidence, and documented known limits.
+
 - MAGI-012: added deterministic React DOM interaction tests for the actual
   Desktop module using Hermes' Vitest/React Testing Library patterns and a
   mock SDK/REST context; covers queue decisions, errors, navigation, stored

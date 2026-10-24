@@ -11,8 +11,31 @@ permissions:
 
 jobs:
   verify:
+    name: Hermes ${{ matrix.label }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    continue-on-error: ${{ matrix.informational }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # v0.21.5 was released as v2026.9.24; there is no v0.21.5 Git tag.
+          - label: minimum-0.21.5
+            hermes_version: v2026.9.24
+            hermes_sha: f97608f178d1ffeca59860195ab7da295f7c8e5f
+            python_version: '3.13'
+            informational: false
+          - label: ci-pinned
+            hermes_version: pinned-2026-10-08
+            hermes_sha: 517b5e10febd619ce30bb22580e29b160266eb43
+            python_version: '3.14'
+            informational: false
+          # Latest published stable GitHub release selected on 2026-10-23.
+          - label: stable-0.22.5
+            hermes_version: v0.22.5
+            hermes_sha: bf0203a794a07aac3ff764972ab9087baa4e4f4e
+            python_version: '3.14'
+            informational: true
     steps:
       - name: Check out Magi
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
@@ -22,7 +45,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.14'
+          python-version: ${{ matrix.python_version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
@@ -30,7 +53,7 @@ jobs:
           enable-cache: false
 
       - name: Set up Node for Desktop tests
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -41,20 +64,29 @@ jobs:
       - name: Test Desktop interactions
         run: bash ci/desktop-test.sh
 
-      - name: Install pinned Hermes CLI
+      - name: Install exact Hermes revision
         shell: bash
         env:
-          HERMES_REF: 517b5e10febd619ce30bb22580e29b160266eb43
+          HERMES_REF: ${{ matrix.hermes_sha }}
+          HERMES_VERSION: ${{ matrix.hermes_version }}
         run: |
           set -euo pipefail
-          hermes_dir="$HOME/.hermes/hermes-agent"
+          printf 'Installing Hermes %s at %s\n' "$HERMES_VERSION" "$HERMES_REF"
+          hermes_dir="$RUNNER_TEMP/hermes-agent"
           mkdir -p "$hermes_dir"
           git -C "$hermes_dir" init -q
           git -C "$hermes_dir" remote add origin https://github.com/NousResearch/hermes-agent.git
           git -C "$hermes_dir" fetch --depth=1 origin "$HERMES_REF"
           git -C "$hermes_dir" checkout -q --detach FETCH_HEAD
-          uv sync --project "$hermes_dir" --frozen --no-dev --python 3.14
+          test "$(git -C "$hermes_dir" rev-parse HEAD)" = "$HERMES_REF"
+          git -C "$hermes_dir" diff --quiet
+          uv sync --project "$hermes_dir" --frozen --no-dev --python "${{ matrix.python_version }}"
           echo "$hermes_dir/.venv/bin" >> "$GITHUB_PATH"
+          echo "PYTHONPATH=$hermes_dir" >> "$GITHUB_ENV"
+          echo "HERMES_HOME=$RUNNER_TEMP/magi-hermes-profile" >> "$GITHUB_ENV"
+
+      - name: Check native Hermes memory APIs
+        run: python ci/hermes-compatibility.py
 
       - name: Verify Magi
         run: ./verify.sh
