@@ -113,6 +113,24 @@ function buildCompactionDiff(beforeEntries, afterEntries) {
   return rows
 }
 
+function validateCompactionEdits(sourceEntries, editedEntries) {
+  const delimiter = '\n§\n'
+  const countChars = value => Array.from(value).length
+  const beforeChars = countChars(sourceEntries.join(delimiter))
+  const normalized = editedEntries.map(entry => String(entry).trim())
+  const afterChars = countChars(normalized.join(delimiter))
+  const maxEntries = Math.max(1, Math.min(6, Math.floor((sourceEntries.length + 3) / 4)))
+  const maxChars = Math.max(1, Math.floor(beforeChars * 0.60))
+  const errors = []
+  if (!normalized.length || normalized.some(entry => !entry)) errors.push('Entries must not be empty.')
+  if (normalized.length > maxEntries) errors.push(`At most ${maxEntries} entries allowed.`)
+  if (new Set(normalized).size !== normalized.length) errors.push('Exact duplicate entries are not allowed.')
+  if (normalized.some(entry => entry.includes(delimiter))) errors.push('The Hermes memory delimiter is not allowed.')
+  if (afterChars >= beforeChars || afterChars > maxChars) errors.push(`Proposal must be shorter and no more than ${maxChars} characters.`)
+  return { valid: errors.length === 0, errors, normalized, beforeChars, afterChars, maxEntries, maxChars,
+    reductionPercent: beforeChars ? Math.round((1 - afterChars / beforeChars) * 1000) / 10 : 0 }
+}
+
 const CONTROL_TRANSITION = 'transition-all duration-100 ease-out motion-reduce:transition-none'
 const PANEL_TRANSITION = 'transition-[background-color,border-color,opacity] duration-150 ease-out motion-reduce:transition-none'
 const RESIZABLE_ENTRY_VIEWER = 'h-[48vh] min-h-40 max-h-[72vh] flex-none resize-y overflow-auto'
@@ -944,6 +962,9 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [applyingCompaction, setApplyingCompaction] = useState(false)
   const [compactionPreview, setCompactionPreview] = useState(null)
   const [previewView, setPreviewView] = useState('entries')
+  const [proposalEntries, setProposalEntries] = useState([])
+  const [proposalEditing, setProposalEditing] = useState(false)
+  const [confirmEdited, setConfirmEdited] = useState(false)
   const [feedback, setFeedback] = useState(null)
 
   const stored = useQuery({
@@ -971,9 +992,31 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const isDirty = Boolean(current && draft !== current.content)
   const targetLabel = target === 'memory' ? 'MEMORY.md' : 'USER.md'
   const previewDiff = useMemo(
-    () => compactionPreview ? buildCompactionDiff(compactionPreview.source_entries || [], compactionPreview.proposed_entries || []) : [],
-    [compactionPreview]
+    () => compactionPreview ? buildCompactionDiff(compactionPreview.source_entries || [], proposalEntries) : [],
+    [compactionPreview, proposalEntries]
   )
+  const proposalValidation = useMemo(
+    () => compactionPreview ? validateCompactionEdits(compactionPreview.source_entries || [], proposalEntries) : null,
+    [compactionPreview, proposalEntries]
+  )
+  const manuallyEdited = Boolean(compactionPreview && JSON.stringify(proposalEntries) !== JSON.stringify(compactionPreview.proposed_entries))
+
+  const changeProposalEntries = next => {
+    setProposalEntries(next)
+    setConfirmEdited(false)
+  }
+
+  const splitProposalEntry = index => {
+    const text = proposalEntries[index]
+    const newline = text.indexOf('\n')
+    const at = newline > 0 ? newline : text.lastIndexOf(' ', Math.floor(text.length / 2))
+    if (at <= 0 || at >= text.length - 1) return
+    changeProposalEntries([...proposalEntries.slice(0, index), text.slice(0, at).trim(), text.slice(at + 1).trim(), ...proposalEntries.slice(index + 1)])
+  }
+  const mergeProposalEntry = index => {
+    if (index + 1 >= proposalEntries.length) return
+    changeProposalEntries([...proposalEntries.slice(0, index), `${proposalEntries[index]}\n${proposalEntries[index + 1]}`, ...proposalEntries.slice(index + 2)])
+  }
   const currentPreviewFingerprint = compactionPreview && stored.data?.targets?.[compactionPreview.target]?.source_fingerprint
   const isPreviewStale = Boolean(compactionPreview && currentPreviewFingerprint && currentPreviewFingerprint !== compactionPreview.source_fingerprint)
 
@@ -1102,6 +1145,9 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       }
       setCompactionPreview(preview)
       setPreviewView('entries')
+      setProposalEntries([...(preview.proposed_entries || [])])
+      setProposalEditing(false)
+      setConfirmEdited(false)
       // The polling snapshot may predate this preview; refresh once to compare
       // against data at least as recent as the request (no extra AI call).
       await stored.refetch()
@@ -1118,16 +1164,25 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const applyPreview = async () => {
     if (!compactionPreview) return
     if (isPreviewStale) return
+    if (!proposalValidation?.valid) return
+    if (manuallyEdited && !confirmEdited) {
+      // Make normalization visible before asking for the final user click.
+      setProposalEntries(proposalValidation.normalized)
+      setProposalEditing(false)
+      setConfirmEdited(true)
+      return
+    }
     setApplyingCompaction(true)
     setFeedback(null)
     try {
       const result = await applyCompaction(
         compactionPreview.target,
         compactionPreview.source_fingerprint,
-        compactionPreview.proposed_entries
+        proposalEntries
       )
       setFeedback({ kind: 'success', message: result?.result?.message || 'Memory compaction applied.' })
       setCompactionPreview(null)
+      setConfirmEdited(false)
       setSelectedText('')
       await stored.refetch()
     } catch (error) {
@@ -1367,8 +1422,21 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                       ? jsx('h3', { className: 'mr-auto text-xs font-semibold', children: 'Compaction diff' })
                       : jsx('h3', { className: 'mr-auto text-xs font-semibold', children: 'Proposed memory entries' }),
                     jsx(ActionButton, { onClick: () => setPreviewView('entries'), 'aria-pressed': previewView === 'entries', children: 'Entries' }),
-                    jsx(ActionButton, { onClick: () => setPreviewView('diff'), 'aria-pressed': previewView === 'diff', children: 'Diff' })
+                    jsx(ActionButton, { onClick: () => setPreviewView('diff'), 'aria-pressed': previewView === 'diff', children: 'Diff' }),
+                    jsx(ActionButton, {
+                      onClick: () => { setProposalEditing(!proposalEditing); setPreviewView('entries') },
+                      'aria-pressed': proposalEditing,
+                      children: proposalEditing ? 'Done editing' : 'Edit proposal'
+                    })
                   ] }),
+                  jsx('div', {
+                    className: 'mb-2 text-xs text-(--ui-text-tertiary)',
+                    'aria-live': 'polite',
+                    children: proposalValidation ? `${proposalEntries.length}/${proposalValidation.maxEntries} entries · ${proposalValidation.afterChars}/${proposalValidation.maxChars} characters · estimated ${proposalValidation.reductionPercent}% reduction (local estimate, backend validates)` : ''
+                  }),
+                  proposalValidation && !proposalValidation.valid
+                    ? jsx('p', { role: 'alert', className: 'mb-2 text-xs text-(--ui-danger,#f87171)', children: proposalValidation.errors.join(' ') })
+                    : null,
                   previewView === 'diff'
                     ? jsx('div', { 'aria-label': 'Compaction diff', 'data-selectable-text': 'true', className: 'space-y-0.5 font-mono text-xs select-text', children: previewDiff.map((row, index) =>
                         jsxs('div', {
@@ -1376,7 +1444,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                           children: [jsx('strong', { className: 'mr-2', children: row.kind === 'removed' ? 'Removed −' : row.kind === 'added' ? 'Added +' : 'Unchanged =' }), row.text]
                         }, index)
                       ) })
-                    : jsx('div', { className: 'space-y-2', children: (compactionPreview.proposed_entries || []).map((entry, index) =>
+                    : jsx('div', { className: 'space-y-2', children: proposalEntries.map((entry, index) =>
                   jsxs('div', {
                     className: `rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-primary,transparent) p-3 ${PANEL_TRANSITION}`,
                     children: [
@@ -1384,10 +1452,25 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                         className: 'mb-1 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-tertiary)',
                         children: `Proposed entry ${index + 1}`
                       }),
-                      jsx('div', { className: 'whitespace-pre-wrap break-words text-sm', children: entry })
+                      proposalEditing
+                        ? jsxs('div', { className: 'space-y-2', children: [
+                            jsx('textarea', {
+                              value: entry,
+                              onChange: event => changeProposalEntries(proposalEntries.map((value, position) => position === index ? event.target.value : value)),
+                              'aria-label': `Edit proposed entry ${index + 1}`,
+                              className: 'h-24 w-full resize-y rounded border border-(--ui-stroke-secondary) bg-transparent p-2 text-sm'
+                            }),
+                            jsx('div', { className: 'flex flex-wrap gap-2', children: [
+                              jsx(ActionButton, { onClick: () => splitProposalEntry(index), children: 'Split' }),
+                              jsx(ActionButton, { disabled: index === proposalEntries.length - 1, onClick: () => mergeProposalEntry(index), children: 'Merge next' }),
+                              jsx(ActionButton, { onClick: () => changeProposalEntries(proposalEntries.filter((_, position) => position !== index)), children: 'Remove entry' })
+                            ] })
+                          ] })
+                        : jsx('div', { 'data-selectable-text': 'true', className: 'whitespace-pre-wrap break-words text-sm select-text', children: entry })
                     ]
                   }, `compact:${index}`)
-                ) })
+                ) }),
+                  proposalEditing ? jsx(ActionButton, { onClick: () => changeProposalEntries([...proposalEntries, '']), children: 'Add entry' }) : null
                 ]
               }),
               jsxs('div', {
@@ -1395,9 +1478,9 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 children: [
                   jsx(ActionButton, {
                     tone: 'primary',
-                    disabled: applyingCompaction || isPreviewStale,
+                    disabled: applyingCompaction || isPreviewStale || !proposalValidation?.valid,
                     onClick: applyPreview,
-                    children: applyingCompaction ? 'Applying…' : 'Apply compaction'
+                    children: applyingCompaction ? 'Applying…' : manuallyEdited && !confirmEdited ? 'Review edited proposal' : manuallyEdited ? 'Confirm edited compaction' : 'Apply compaction'
                   }),
                   jsx(ActionButton, {
                     disabled: applyingCompaction,
@@ -1406,7 +1489,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                   }),
                   jsx('span', {
                     className: 'text-xs text-(--ui-text-tertiary)',
-                    children: 'No stored memory changes until Apply compaction is pressed.'
+                    children: manuallyEdited ? 'Manual edits have not been semantically verified. Confirm final proposal explicitly; invalid edits cannot be applied.' : 'No stored memory changes until Apply compaction is pressed.'
                   })
                 ]
               })

@@ -1,0 +1,180 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "scope": {
+    "allowed_paths": [
+      "dashboard/plugin_api.py",
+      "desktop/plugin.js",
+      "tests/test_compaction_006.py",
+      "tests/test_desktop.py",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_compaction_006.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Support explicit local manual editing of proposed compaction entries with backend-enforced constraints.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Provide editable entry list with split/merge/delete and reversible view switching."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Calculate local counts and reduction; require final confirmation before applying any manually edited proposal."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Backend enforces nonempty, unique, entry caps, 60%-budget, delimiter safety and stale fingerprint while using Hermes public apply_batch."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Provide editable entry list with split/merge/delete and reversible view switching. Target-specific RED test must fail on unmodified baseline and pass after implementation.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Calculate local counts and reduction; require final confirmation before applying any manually edited proposal. Target-specific RED test must fail on unmodified baseline and pass after implementation.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Backend enforces nonempty, unique, entry caps, 60%-budget, delimiter safety and stale fingerprint while using Hermes public apply_batch. Target-specific RED test must fail on unmodified baseline and pass after implementation.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Do not change Hermes files, private method bindings, pending approval execution or compaction native application semantics; retain Magi 1.7.8."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Unapproved, stale or invalid edits are silently applied; LLM is invoked without explicit user opt-in outside compaction."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Existing Hermes memory entries and Magi Desktop/backend plugin contracts."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Documented, tested and reversible UX behavior; no direct native memory file writes."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "On invalid source/remote failure preserve memory, preview and user draft; show actionable error."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "9c81fff8e068785b0b20f1e4a5d2b6172f9492b0",
+    "base_tree": "eb737d635c22e852100919f2f101b62d706847ae",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "84d91ffa0c2a5a7bca921ff8a8cb3ec438eb5263b91b84de403c9bf5c107278c"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_compaction_006.py --rootdir=tests"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_compaction_006.py --rootdir=tests"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_compaction_006.py --rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_magi_006",
+      "AssertionError"
+    ]
+  }
+}

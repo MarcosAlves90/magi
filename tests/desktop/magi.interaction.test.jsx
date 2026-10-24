@@ -39,7 +39,7 @@ function fixture() {
         const targets = {}
         for (const target of ['memory', 'user']) {
           const entries = state.entries[target].map((content, index) => ({ content, index }))
-          targets[target] = { entries, count: entries.length, used_chars: 20, char_limit: 500, usage_percent: 4, estimated_tokens: 10 }
+          targets[target] = { entries, count: entries.length, used_chars: 20, char_limit: 500, usage_percent: 4, estimated_tokens: 10, source_fingerprint: state.fingerprint }
         }
         return { targets }
       }
@@ -62,7 +62,7 @@ function fixture() {
         }
         if (suffix === 'compact/preview') return {
           success: true, target, source_fingerprint: state.fingerprint,
-          proposed_entries: ['Condensed fact'], before_entry_count: 2, after_entry_count: 1,
+          source_entries: [...state.entries[target]], proposed_entries: ['Condensed fact'], before_entry_count: 2, after_entry_count: 1,
           before_tokens: 15, after_tokens: 5, reduction_percent: 60
         }
         if (suffix === 'compact') {

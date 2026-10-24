@@ -666,6 +666,8 @@ def apply_memory_compaction(target: str, body: MemoryCompactionApplyRequest) -> 
         _reject_embedded_delimiter(entry)
     if len(set(proposed)) != len(proposed):
         raise HTTPException(status_code=400, detail="entries must not contain duplicates.")
+    if any(_entry_delimiter() in entry for entry in proposed):
+        raise HTTPException(status_code=400, detail="entries must not contain the native memory-entry delimiter.")
 
     store = _memory_store()
     current = list(store.memory_entries if target == "memory" else store.user_entries)
