@@ -2,6 +2,11 @@
 
 ## 1.8.0 — 2026-10-23
 
+- Simplified the Desktop workspace with progressive disclosures for advanced
+  pending/history filters, bulk decisions, usage details, memory transfer and AI tools.
+  Clarified action labels and accessible tooltips, keyboard focus, active filter
+  counts and filter reset; existing import/export, AI review and history filters
+  remain available.
 - MAGI-011: pending bulk decisions now show per-record results in a collapsible,
   accessible panel with separate applied, rejected, failed and reconciliation
   counters. Failed records still in the queue can be opened without replaying

@@ -40,7 +40,9 @@ it('reviews an imported JSON file and writes only after explicit confirmation', 
   vi.stubGlobal('fetch', () => { throw new Error('Unexpected external network access') })
   const state = mountMagi()
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
-  await screen.findByText('Export both')
+  await screen.findByRole('heading', { name: 'Stored memory' })
+  fireEvent.click(screen.getByText('Transfer memory'))
+  await screen.findByText('Export both stores')
   const payload = { format_version: 1, target: 'memory', entries: ['Existing fact', 'Café\nnew line'] }
   const file = { name: 'memory.json', size: 100, text: async () => JSON.stringify(payload) }
   fireEvent.change(screen.getByLabelText('Import memory JSON'), { target: { files: [file] } })
@@ -60,7 +62,9 @@ it('creates a versioned JSON download locally without a network export request',
   vi.stubGlobal('fetch', () => { throw new Error('Unexpected external network access') })
   const state = mountMagi()
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
-  await screen.findByText('Export both')
+  await screen.findByRole('heading', { name: 'Stored memory' })
+  fireEvent.click(screen.getByText('Transfer memory'))
+  await screen.findByText('Export both stores')
   const link = screen.getByRole('button', { name: 'Export memory' })
   expect(link.getAttribute('download')).toBe('magi-memory-memory.json')
   expect(JSON.parse(decodeURIComponent(link.getAttribute('href').split(',')[1]))).toEqual({
@@ -68,4 +72,20 @@ it('creates a versioned JSON download locally without a network export request',
   })
   fireEvent.click(link)
   expect(state.requests.some(request => request.path.includes('export'))).toBe(false)
+})
+
+it('keeps transfer and token details collapsed until requested', async () => {
+  mountMagi()
+  fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
+  await screen.findByRole('heading', { name: 'Stored memory' })
+
+  expect(screen.queryByRole('button', { name: 'Import JSON' })).toBeNull()
+  expect(screen.queryByText('Estimated tokens')).toBeNull()
+  expect(screen.getByText('Add entry')).toBeTruthy()
+  fireEvent.click(screen.getByText('Transfer memory'))
+  expect(await screen.findByRole('button', { name: 'Import JSON' })).toBeTruthy()
+  expect(screen.getByText('Export both stores')).toBeTruthy()
+
+  fireEvent.click(screen.getByText('Usage details'))
+  expect(await screen.findByText('Estimated tokens')).toBeTruthy()
 })

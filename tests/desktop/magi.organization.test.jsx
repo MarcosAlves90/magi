@@ -56,7 +56,17 @@ it('runs organization analysis only after an explicit action and displays source
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
   await screen.findByRole('heading', { name: 'Stored memory' })
   expect(state.calls.some(call => call.path.endsWith('/organization/analyze'))).toBe(false)
-  fireEvent.click(await screen.findByRole('button', { name: 'Analyze organization' }))
+  expect(screen.queryByRole('button', { name: 'Review memory with AI' })).toBeNull()
+  fireEvent.click(screen.getByText('AI tools'))
+  const reviewButton = await screen.findByRole('button', { name: 'Review memory with AI' })
+  const tooltip = document.getElementById(reviewButton.getAttribute('aria-describedby'))
+  expect(tooltip?.getAttribute('role')).toBe('tooltip')
+  expect(tooltip?.textContent).toContain('selected memory')
+  expect(tooltip?.className).toContain('group-focus-within')
+  expect(tooltip?.className).toContain('group-hover')
+  reviewButton.focus()
+  expect(document.activeElement).toBe(reviewButton)
+  fireEvent.click(reviewButton)
 
   expect(await screen.findByText('Memory organization suggestions')).toBeTruthy()
   expect(screen.getByText('Both entries describe the same preference.')).toBeTruthy()
@@ -72,7 +82,8 @@ it('shows a safe analysis error without issuing a mutation request', async () =>
 
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
   await screen.findByRole('heading', { name: 'Stored memory' })
-  fireEvent.click(await screen.findByRole('button', { name: 'Analyze organization' }))
+  fireEvent.click(screen.getByText('AI tools'))
+  fireEvent.click(await screen.findByRole('button', { name: 'Review memory with AI' }))
 
   expect(await screen.findByRole('alert')).toBeTruthy()
   expect(screen.getByRole('alert').textContent).toContain('memory was not changed')

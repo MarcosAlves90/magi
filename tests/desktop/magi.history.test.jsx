@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import plugin from '../../desktop/plugin.js'
 
 afterEach(cleanup)
@@ -28,9 +29,24 @@ it('filters local action history and requires confirmation before clearing it', 
   expect(await screen.findByText('Magi action history')).toBeTruthy()
   expect(await screen.findByText('Added · MEMORY.md')).toBeTruthy()
   expect(screen.getByText(/not an undo log/)).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'History operation' })).toBeNull()
+  const filters = screen.getByRole('button', { name: 'Filters' })
+  expect(filters.getAttribute('aria-expanded')).toBe('false')
+  filters.focus()
+  const user = userEvent.setup()
+  await user.keyboard('{Enter}')
+  expect(filters.getAttribute('aria-expanded')).toBe('true')
+  await user.keyboard(' ')
+  expect(filters.getAttribute('aria-expanded')).toBe('false')
+  await user.keyboard('{Enter}')
+  expect(filters.getAttribute('aria-expanded')).toBe('true')
   fireEvent.change(screen.getByLabelText('History operation'), { target: { value: 'add' } })
   await waitFor(() => expect(state.calls.some(call => call.path.includes('operation=add'))).toBe(true))
+  expect(screen.getByText('Filters · 1 active')).toBeTruthy()
   expect(state.calls.some(call => call.path === '/history' && call.options.method === 'DELETE')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
+  await waitFor(() => expect(state.calls.some(call => call.path === '/history?' && !call.path.includes('operation='))).toBe(true))
+  expect(screen.getByRole('button', { name: 'Filters' }).getAttribute('aria-expanded')).toBe('true')
 
   fireEvent.click(screen.getByRole('button', { name: 'Clear history' }))
   fireEvent.click(screen.getByRole('button', { name: 'Confirm clear history' }))

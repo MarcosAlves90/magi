@@ -1,5 +1,5 @@
 import { ROUTES_AREA, SIDEBAR_NAV_AREA, useQuery } from '@hermes/plugin-sdk'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 const VIEWS = [
@@ -214,8 +214,24 @@ function ActionButton({ children, tone = 'default', className = '', ...props }) 
   return jsx('button', {
     type: 'button',
     ...props,
-    className: `inline-flex items-center justify-center rounded-md border border-(--ui-stroke-secondary) px-2.5 py-1.5 text-xs font-medium ${CONTROL_TRANSITION} ${toneClass} hover:bg-(--chrome-action-hover) active:scale-95 disabled:pointer-events-none disabled:opacity-50 ${className}`,
+    className: `inline-flex items-center justify-center rounded-md border border-(--ui-stroke-secondary) px-2.5 py-1.5 text-xs font-medium ${CONTROL_TRANSITION} ${toneClass} hover:bg-(--chrome-action-hover) active:scale-95 focus-visible:outline-2 focus-visible:outline-(--ui-accent) disabled:pointer-events-none disabled:opacity-50 ${className}`,
     children
+  })
+}
+
+function ActionTooltipButton({ tooltip, ...props }) {
+  const tooltipId = useId()
+  return jsxs('span', {
+    className: 'group relative inline-flex',
+    children: [
+      jsx(ActionButton, { ...props, 'aria-describedby': tooltipId }),
+      jsx('span', {
+        id: tooltipId,
+        role: 'tooltip',
+        className: 'pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-max max-w-64 -translate-x-1/2 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-left text-[0.6875rem] text-(--ui-text-primary) opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+        children: tooltip
+      })
+    ]
   })
 }
 
@@ -498,6 +514,9 @@ function PendingWritesPage({
 }) {
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState({ ...EMPTY_PENDING_FILTERS })
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const pendingFiltersId = useId()
+  const [bulkActionsOpen, setBulkActionsOpen] = useState(false)
   const [selected, setSelected] = useState('')
   const [view, setView] = useState('overview')
   const [busyAction, setBusyAction] = useState('')
@@ -514,6 +533,7 @@ function PendingWritesPage({
   const readyCount = records.filter(record => record.target_status?.can_apply !== false).length
   const query = search.trim().toLocaleLowerCase()
   const hasFilters = Boolean(query || Object.values(filters).some(Boolean))
+  const activeFilterCount = Object.values(filters).filter(Boolean).length
   const origins = [...new Set(records.map(record => String(record.origin || 'unknown')))].sort()
   const filtered = useMemo(
     () => filterPendingRecords(records, { ...filters, query }),
@@ -636,46 +656,59 @@ function PendingWritesPage({
         ]
       }),
       records.length
-        ? bulkConfirm
-          ? jsxs('div', {
-              className: 'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-2.5 text-xs animate-in fade-in-0 duration-150',
-              children: [
-                jsx('span', {
-                  className: 'mr-auto font-medium',
-                  children: `${bulkConfirm === 'approve' ? 'Approve' : 'Reject'} all ${records.length} pending write(s) in the whole queue, including filtered-out proposals?`
-                }),
-                jsx(ActionButton, {
-                  tone: bulkConfirm === 'reject' ? 'danger' : 'primary',
-                  disabled: Boolean(busyAction),
-                  onClick: () => decide(bulkConfirm, 'all'),
-                  children: busyAction ? 'Working…' : `Confirm ${bulkConfirm} all`
-                }),
-                jsx(ActionButton, {
-                  disabled: Boolean(busyAction),
-                  onClick: () => setBulkConfirm(''),
-                  children: 'Cancel'
-                })
-              ]
-            })
-          : jsxs('div', {
-              className: 'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2',
-              children: [
-                jsx('span', { className: 'mr-auto text-xs text-(--ui-text-tertiary)', children: 'Bulk actions affect the whole queue, including proposals hidden by filters.' }),
-                jsx(ActionButton, {
-                  tone: 'primary',
-                  disabled: Boolean(busyAction),
-                  title: blockedApprovalCount ? 'Valid proposals will be attempted; blocked proposals will be reported individually.' : undefined,
-                  onClick: () => setBulkConfirm('approve'),
-                  children: 'Approve all'
-                }),
-                jsx(ActionButton, {
-                  tone: 'danger',
-                  disabled: Boolean(busyAction),
-                  onClick: () => setBulkConfirm('reject'),
-                  children: 'Reject all'
-                })
-              ]
-            })
+        ? jsxs('details', {
+            open: bulkActionsOpen || Boolean(bulkConfirm),
+            className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-2',
+            children: [
+              jsx('summary', {
+                onClick: event => { event.preventDefault(); setBulkActionsOpen(open => !open) },
+                className: 'cursor-pointer text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+                children: 'Actions for all pending items'
+              }, 'summary'),
+              bulkActionsOpen || bulkConfirm
+                ? bulkConfirm
+                ? jsxs('div', {
+                    className: 'mt-2 flex flex-wrap items-center gap-2 bg-(--chrome-action-hover) px-3 py-2.5 text-xs animate-in fade-in-0 duration-150',
+                    children: [
+                      jsx('span', {
+                        className: 'mr-auto font-medium',
+                        children: `${bulkConfirm === 'approve' ? 'Approve' : 'Reject'} all ${records.length} pending write(s) in the whole queue, including filtered-out proposals?`
+                      }, 'scope'),
+                      jsx(ActionButton, {
+                        tone: bulkConfirm === 'reject' ? 'danger' : 'primary',
+                        disabled: Boolean(busyAction),
+                        onClick: () => decide(bulkConfirm, 'all'),
+                        children: busyAction ? 'Working…' : `Confirm ${bulkConfirm} all`
+                      }, 'confirm'),
+                      jsx(ActionButton, {
+                        disabled: Boolean(busyAction),
+                        onClick: () => setBulkConfirm(''),
+                        children: 'Cancel'
+                      }, 'cancel')
+                    ]
+                  }, 'confirmation')
+                : jsxs('div', {
+                    className: 'mt-2 flex flex-wrap items-center gap-2',
+                    children: [
+                      jsx('span', { className: 'mr-auto text-xs text-(--ui-text-tertiary)', children: 'These actions affect all pending proposals, including proposals hidden by filters.' }, 'scope'),
+                      jsx(ActionButton, {
+                        tone: 'primary',
+                        disabled: Boolean(busyAction),
+                        title: blockedApprovalCount ? 'Valid proposals will be attempted; blocked proposals will be reported individually.' : undefined,
+                        onClick: () => setBulkConfirm('approve'),
+                        children: 'Approve all'
+                      }, 'approve'),
+                      jsx(ActionButton, {
+                        tone: 'danger',
+                        disabled: Boolean(busyAction),
+                        onClick: () => setBulkConfirm('reject'),
+                        children: 'Reject all'
+                      }, 'reject')
+                    ]
+                  }, 'actions')
+                : null
+            ]
+          })
         : null,
       decisionReport
         ? jsx(DecisionResults, {
@@ -706,46 +739,59 @@ function PendingWritesPage({
                     onChange: event => setSearch(event.target.value),
                     placeholder: 'Search by id, action, target, or summary',
                     ariaLabel: 'Search pending memory'
-                  }),
-                  jsx('div', {
-                    className: 'mt-2 grid grid-cols-2 gap-2',
+                  }, 'search'),
+                  jsxs('div', {
+                    className: 'mt-2 rounded-md border border-(--ui-stroke-secondary) px-2.5 py-2',
                     children: [
-                      [['action', 'Pending action filter', [['', 'All actions'], ['add', 'Add'], ['replace', 'Replace'], ['remove', 'Remove'], ['batch', 'Batch']]],
-                        ['target', 'Pending target filter', [['', 'Both stores'], ['memory', 'Memory'], ['user', 'User']]],
-                        ['origin', 'Pending origin filter', [['', 'All origins'], ...origins.map(value => [value, value === 'background_review' ? 'Automatic review' : value === 'foreground' ? 'Foreground' : value])]],
-                        ['state', 'Pending status filter', [['', 'All statuses'], ['ready', 'Ready'], ['missing', 'Missing'], ['unverifiable', 'Unverifiable'], ['ambiguous', 'Already stored / ambiguous'], ['reconciliation_required', 'Reconciliation required'], ['unknown', 'Unknown']]]].map(([key, label, options]) =>
-                        jsx('select', {
-                          'aria-label': label,
-                          value: filters[key],
-                          onChange: event => setFilters(previous => ({ ...previous, [key]: event.target.value })),
-                          className: 'min-w-0 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs',
-                          children: options.map(([value, text]) => jsx('option', { value, children: text }, value))
-                        }, key)
-                      ),
-                      [['fromDate', 'Pending date from'], ['toDate', 'Pending date to']].map(([key, label]) =>
-                        jsxs('label', {
-                          className: 'min-w-0 text-[0.6875rem] text-(--ui-text-tertiary)',
-                          children: [
-                            jsx('span', { children: key === 'fromDate' ? 'From (UTC)' : 'To (UTC)' }),
-                            jsx('input', {
-                              type: 'date',
+                      jsx('button', {
+                        type: 'button',
+                        'aria-expanded': filtersOpen,
+                        'aria-controls': pendingFiltersId,
+                        onClick: () => setFiltersOpen(open => !open),
+                        className: 'text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+                        children: activeFilterCount ? `Filters · ${activeFilterCount} active` : 'Filters'
+                      }, 'toggle'),
+                      jsx('div', {
+                        id: pendingFiltersId,
+                        hidden: !filtersOpen,
+                        className: 'mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2',
+                        children: [
+                          [['action', 'Pending action filter', [['', 'All actions'], ['add', 'Add'], ['replace', 'Replace'], ['remove', 'Remove'], ['batch', 'Batch']]],
+                            ['target', 'Pending target filter', [['', 'Both stores'], ['memory', 'Memory'], ['user', 'User']]],
+                            ['origin', 'Pending origin filter', [['', 'All origins'], ...origins.map(value => [value, value === 'background_review' ? 'Automatic review' : value === 'foreground' ? 'Foreground' : value])]],
+                            ['state', 'Pending status filter', [['', 'All statuses'], ['ready', 'Ready'], ['missing', 'Missing'], ['unverifiable', 'Unverifiable'], ['ambiguous', 'Already stored / ambiguous'], ['reconciliation_required', 'Reconciliation required'], ['unknown', 'Unknown']]]].map(([key, label, options]) =>
+                            jsx('select', {
                               'aria-label': label,
                               value: filters[key],
                               onChange: event => setFilters(previous => ({ ...previous, [key]: event.target.value })),
-                              className: 'mt-1 block w-full min-w-0 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs'
-                            })
-                          ]
-                        }, key)
-                      )
+                              className: 'min-w-0 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs',
+                              children: options.map(([value, text]) => jsx('option', { value, children: text }, value))
+                            }, key)
+                          ),
+                          [['fromDate', 'Pending date from'], ['toDate', 'Pending date to']].map(([key, label]) =>
+                            jsxs('label', {
+                              className: 'min-w-0 text-[0.6875rem] text-(--ui-text-tertiary)',
+                              children: [
+                                jsx('span', { children: key === 'fromDate' ? 'From (UTC)' : 'To (UTC)' }),
+                                jsx('input', {
+                                  type: 'date',
+                                  'aria-label': label,
+                                  value: filters[key],
+                                  onChange: event => setFilters(previous => ({ ...previous, [key]: event.target.value })),
+                                  className: 'mt-1 block w-full min-w-0 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs'
+                                })
+                              ]
+                            }, key)
+                          ),
+                          hasFilters ? jsx(ActionButton, { onClick: clearFilters, children: 'Clear filters' }, 'clear') : null
+                        ]
+                      }, 'controls')
                     ]
-                  }),
+                  }, 'filters'),
                   jsx('div', {
-                    className: 'mt-2 flex items-center justify-between text-[0.6875rem] text-(--ui-text-quaternary)',
-                    children: [
-                      jsx('span', { 'aria-live': 'polite', children: `${filtered.length} of ${records.length} shown` }),
-                      hasFilters ? jsx('button', { type: 'button', onClick: clearFilters, className: 'hover:text-(--ui-text-primary)', children: 'Clear filters' }) : null
-                    ]
-                  })
+                    className: 'mt-2 text-[0.6875rem] text-(--ui-text-quaternary)',
+                    children: jsx('span', { 'aria-live': 'polite', children: `${filtered.length} of ${records.length} shown` })
+                  }, 'count')
                 ]
               }),
               listing.isLoading
@@ -975,6 +1021,10 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry }) {
 
 function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
   const [target, setTarget] = useState('memory')
+  const [usageDetailsOpen, setUsageDetailsOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [aiToolsOpen, setAiToolsOpen] = useState(false)
+  const compactTooltipId = useId()
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
   const [draftSlots, setDraftSlots] = useState({})
@@ -1000,6 +1050,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [reviewingPreservation, setReviewingPreservation] = useState(false)
   const [semanticReport, setSemanticReport] = useState(null)
   const reviewRequestId = useRef(0)
+  const importFileInput = useRef(null)
   const [feedback, setFeedback] = useState(null)
 
   const stored = useQuery({
@@ -1453,28 +1504,40 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             ]
           }),
           jsx('div', {
-            className: 'mt-2 rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-3 py-2',
+            role: 'group',
+            'aria-label': 'Memory usage summary',
+            className: 'mt-2 grid grid-cols-1 gap-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-3 py-2 sm:grid-cols-3',
             children: [
-              jsx('div', {
-                className: 'grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3',
-                children: [
-                  jsx(CompactStat, { label: 'Entries', value: targetData.count ?? 0, detail: targetLabel }, 'entries'),
-                  jsx(CompactStat, { label: 'Estimated tokens', value: `~${targetData.estimated_tokens ?? 0}`, detail: `/ ~${targetData.estimated_token_limit ?? 0} budget · tokens estimated` }, 'tokens'),
-                  jsx(CompactStat, { label: 'Characters', value: targetData.used_chars ?? 0, detail: `/ ${targetData.char_limit ?? 0}` }, 'characters')
-                ]
-              }),
+              jsx(CompactStat, { label: 'Entries', value: targetData.count ?? 0, detail: targetLabel }, 'entries'),
               jsxs('div', {
-                className: 'mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-(--ui-stroke-secondary) pt-2',
+                className: 'min-w-0 sm:col-span-2',
                 children: [
+                  jsxs('details', {
+                    open: usageDetailsOpen,
+                    className: 'mb-2 border-t border-(--ui-stroke-secondary) pt-2 text-xs',
+                    children: [
+                      jsx('summary', { onClick: event => { event.preventDefault(); setUsageDetailsOpen(open => !open) }, className: 'cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)', children: 'Usage details' }, 'summary'),
+                      usageDetailsOpen
+                        ? jsxs('div', {
+                            className: 'mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2',
+                            children: [
+                              jsx(CompactStat, { label: 'Estimated tokens', value: `~${targetData.estimated_tokens ?? 0}`, detail: `/ ~${targetData.estimated_token_limit ?? 0} budget · tokens estimated` }, 'tokens'),
+                              jsx(CompactStat, { label: 'Characters', value: targetData.char_limit ?? 0, detail: 'Maximum character budget' }, 'characters')
+                            ]
+                          }, 'details')
+                        : null
+                    ]
+                  }, 'usage-details'),
                   jsxs('div', {
-                    className: 'flex shrink-0 items-baseline gap-2',
+                    className: 'flex flex-wrap items-baseline gap-x-2 gap-y-1',
                     children: [
                       jsx('span', { className: 'text-[0.625rem] font-medium uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Character budget' }),
-                      jsx('span', { className: 'shrink-0 text-sm font-semibold tabular-nums', children: `${targetData.usage_percent ?? 0}%` })
+                      jsx('span', { className: 'text-sm font-semibold tabular-nums', children: `${targetData.used_chars ?? 0} / ${targetData.char_limit ?? 0} chars` }),
+                      jsx('span', { className: 'text-[0.625rem] text-(--ui-text-tertiary)', children: `${targetData.usage_percent ?? 0}% used` })
                     ]
                   }),
-                  jsx('div', { className: 'min-w-20 flex-1', children: jsx(UsageBar, { percent: targetData.usage_percent }) }),
-                  jsx('div', { className: 'shrink-0 text-[0.625rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` })
+                  jsx('div', { className: 'mt-2 min-w-20', children: jsx(UsageBar, { percent: targetData.usage_percent }) }),
+                  jsx('div', { className: 'mt-1 text-[0.625rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` }),
                 ]
               }, 'budget')
             ]
@@ -1487,69 +1550,94 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
         onSelectEntry: navigateToDiagnosticEntry
       }),
       jsxs('div', {
-        className: 'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
+        className: 'shrink-0 space-y-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
         children: [
-          jsx('div', {
-            className: 'min-w-48 flex-1',
-            children: jsx(SearchBox, {
-              value: search,
-              onChange: event => setSearch(event.target.value),
-              placeholder: `Search ${targetLabel}`,
-              ariaLabel: 'Search stored memory'
-            })
-          }),
-          jsx('div', {
-            role: 'group',
-            'aria-label': 'Stored memory target',
-            className: 'flex shrink-0 gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
-            children: STORED_TARGETS.map(([id, label]) =>
-              jsx(SegmentedChoice, {
-                disabled: compacting || applyingCompaction || saving || deleting,
-                onClick: () => selectTarget(id),
-                selected: target === id,
-                children: `${label} · ${stored.data?.targets?.[id]?.usage_percent ?? 0}%`
-              }, id)
-            )
-          }),
-          jsx('a', {
-            role: 'button',
-            'aria-disabled': importing || !stored.data,
-            tabIndex: importing || !stored.data ? -1 : 0,
-            className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
-            href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
-            download: `magi-memory-${target}.json`,
-            children: `Export ${target}`
-          }),
-          jsx('a', {
-            role: 'button',
-            'aria-disabled': importing || !stored.data,
-            tabIndex: importing || !stored.data ? -1 : 0,
-            className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
-            href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
-            download: 'magi-memory-both.json',
-            children: 'Export both'
-          }),
-          jsxs('label', {
-            className: 'inline-flex cursor-pointer items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover)',
+          jsxs('div', {
+            className: 'flex flex-wrap items-center gap-2',
             children: [
-              jsx('span', { children: 'Import JSON' }, 'label'),
-              jsx('input', {
-                type: 'file', accept: 'application/json,.json', 'aria-label': 'Import memory JSON',
-                className: 'sr-only', onChange: previewImportFile
-              }, 'input')
+              jsx('div', {
+                className: 'min-w-48 flex-1',
+                children: jsx(SearchBox, {
+                  value: search,
+                  onChange: event => setSearch(event.target.value),
+                  placeholder: `Search ${targetLabel}`,
+                  ariaLabel: 'Search stored memory'
+                })
+              }),
+              jsx('div', {
+                role: 'group',
+                'aria-label': 'Stored memory target',
+                className: 'flex shrink-0 gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
+                children: STORED_TARGETS.map(([id, label]) =>
+                  jsx(SegmentedChoice, {
+                    disabled: compacting || applyingCompaction || saving || deleting,
+                    onClick: () => selectTarget(id),
+                    selected: target === id,
+                    children: `${label} · ${stored.data?.targets?.[id]?.usage_percent ?? 0}%`
+                  }, id)
+                )
+              }),
+              jsx(ActionButton, {
+                disabled: compacting || applyingCompaction || saving || deleting,
+                onClick: beginAdd,
+                tone: 'primary',
+                children: 'Add entry'
+              })
             ]
           }),
-          jsx(ActionButton, {
-            disabled: compacting || applyingCompaction || saving || deleting,
-            onClick: beginAdd,
-            className: 'focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
-            children: 'Add entry'
-          }),
-          jsx(ActionButton, {
+          jsxs('div', {
+            className: 'flex flex-wrap items-start gap-2',
+            children: [
+              jsxs('details', {
+                open: transferOpen,
+                className: 'rounded-md border border-(--ui-stroke-secondary) px-2.5 py-2',
+                children: [
+                  jsx('summary', { onClick: event => { event.preventDefault(); setTransferOpen(open => !open) }, className: 'cursor-pointer text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)', children: 'Transfer memory' }, 'summary'),
+                  transferOpen ? jsxs('div', {
+                    className: 'mt-2 flex flex-wrap items-center gap-2',
+                    children: [
+                      jsx('p', { role: 'note', className: 'basis-full text-xs text-(--ui-text-tertiary)', children: 'Exports may contain private information. Magi creates downloads locally and does not upload export files. Imports are previewed and require confirmation before writing.' }, 'privacy'),
+                      jsx('a', {
+                        role: 'button', 'aria-disabled': importing || !stored.data,
+                        tabIndex: importing || !stored.data ? -1 : 0,
+                        className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+                        href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
+                        download: `magi-memory-${target}.json`, children: `Export ${target}`
+                      }, 'export-target'),
+                      jsx('a', {
+                        role: 'button', 'aria-disabled': importing || !stored.data,
+                        tabIndex: importing || !stored.data ? -1 : 0,
+                        className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+                        href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
+                        download: 'magi-memory-both.json', children: 'Export both stores'
+                      }, 'export-both'),
+                      jsx(ActionButton, { disabled: importing || !stored.data, onClick: () => importFileInput.current?.click(), children: 'Import JSON' }, 'import'),
+                      jsx('input', {
+                        ref: importFileInput, type: 'file', accept: 'application/json,.json',
+                        'aria-label': 'Import memory JSON', tabIndex: -1, className: 'sr-only', onChange: previewImportFile
+                      }, 'file')
+                    ]
+                  }, 'controls') : null
+                ]
+              }, 'transfer'),
+              jsxs('details', {
+                open: aiToolsOpen,
+                className: 'rounded-md border border-(--ui-stroke-secondary) px-2.5 py-2',
+                children: [
+                  jsx('summary', { onClick: event => { event.preventDefault(); setAiToolsOpen(open => !open) }, className: 'cursor-pointer text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)', children: 'AI tools' }, 'summary'),
+                  aiToolsOpen ? jsxs('div', {
+                    className: 'mt-2 flex flex-wrap items-center gap-2',
+                    children: [
+                      jsx('p', { role: 'note', className: 'basis-full text-xs text-(--ui-text-tertiary)', children: 'These actions send the selected memory to Hermes’ configured AI model. Review suggestions and compaction proposals yourself; nothing is changed automatically.' }, 'privacy'),
+                      jsxs('span', {
+                        className: 'group relative inline-flex',
+                        children: [
+                          jsx('span', {
+                            children: jsx(ActionButton, {
             tone: 'primary',
             disabled: compacting || applyingCompaction || saving || deleting || !targetData.count || isDirty,
             onClick: compact,
-            className: 'focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+            'aria-describedby': compactTooltipId,
             children: jsxs('span', {
               className: 'inline-flex items-center gap-1.5',
               children: [
@@ -1564,26 +1652,36 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                   strokeLinecap: 'round',
                   strokeLinejoin: 'round',
                   children: [
-                    jsx('path', { d: 'M4 20 17 7' }),
-                    jsx('path', { d: 'm15 3 1.5 2.5L19 7l-2.5 1.5L15 11l-1.5-2.5L11 7l2.5-1.5L15 3Z' }),
-                    jsx('path', { d: 'm20 13 .5 1.5L22 15l-1.5.5L20 17l-.5-1.5L18 15l1.5-.5L20 13Z' })
+                    jsx('path', { d: 'M4 20 17 7' }, 'line'),
+                    jsx('path', { d: 'm15 3 1.5 2.5L19 7l-2.5 1.5L15 11l-1.5-2.5L11 7l2.5-1.5L15 3Z' }, 'spark'),
+                    jsx('path', { d: 'm20 13 .5 1.5L22 15l-1.5.5L20 17l-.5-1.5L18 15l1.5-.5L20 13Z' }, 'spark-small')
                   ]
-                }),
-                jsx('span', { children: compacting ? 'Compacting…' : 'Compact with AI' })
+                }, 'icon'),
+                jsx('span', { children: compacting ? 'Compacting…' : 'Compact with AI' }, 'label')
               ]
             })
-          }),
-          jsx(ActionButton, {
-            disabled: analyzing || compacting || applyingCompaction || saving || deleting || !targetData.count,
-            onClick: analyze,
-            children: analyzing ? 'Analyzing…' : 'Analyze organization'
+          })
+                          }, 'button'),
+                          jsx('span', {
+                            id: compactTooltipId,
+                            role: 'tooltip',
+                            className: 'pointer-events-none absolute bottom-full left-0 z-10 mb-1 w-56 rounded border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-xs text-(--ui-text-primary) opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                            children: 'Create a shorter draft for review. Stored memory changes only if you apply the proposal.'
+                          }, 'tooltip')
+                        ]
+                      }, 'compact'),
+                      jsx(ActionTooltipButton, {
+                        disabled: analyzing || compacting || applyingCompaction || saving || deleting || !targetData.count,
+                        onClick: analyze, tooltip: 'Sends the selected memory to the configured AI model for suggestions. Nothing is applied automatically.',
+                        children: analyzing ? 'Analyzing…' : 'Review memory with AI'
+                      }, 'review')
+                    ]
+                  }, 'controls') : null
+                ]
+              }, 'ai')
+            ]
           })
         ]
-      }),
-      jsx('p', {
-        role: 'note',
-        className: 'border-b border-(--ui-stroke-secondary) px-4 py-2 text-xs text-(--ui-text-tertiary)',
-        children: 'Memory exports may contain private information; Magi creates downloads locally and does not upload export files. AI analysis sends this selected store to the configured model only when you choose Analyze organization; it does not change memory.'
       }),
       feedback
         ? jsx('div', {
@@ -2053,8 +2151,11 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
   const [result, setResult] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const historyFiltersId = useId()
   const [clearConfirm, setClearConfirm] = useState(false)
   const [feedback, setFeedback] = useState(null)
+  const activeFilterCount = [operation, result, dateFrom, dateTo].filter(Boolean).length
   const history = useQuery({
     queryKey: [source, 'history', operation, result, dateFrom, dateTo],
     queryFn: () => loadHistory({ operation, result, dateFrom, dateTo }),
@@ -2074,6 +2175,12 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
       setFeedback(error instanceof Error ? error.message : String(error))
     }
   }
+  const resetFilters = () => {
+    setOperation('')
+    setResult('')
+    setDateFrom('')
+    setDateTo('')
+  }
   const records = history.data?.records || []
   return jsxs('main', {
     className: 'flex h-full min-h-0 flex-col overflow-auto',
@@ -2089,30 +2196,54 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
           jsx(ActionButton, { tone: clearConfirm ? 'danger' : 'default', disabled: history.isFetching, onClick: clear, children: clearConfirm ? 'Confirm clear history' : 'Clear history' })
         ]
       }),
-      jsx('div', { className: 'flex flex-wrap items-end gap-3 border-b border-(--ui-stroke-secondary) px-4 py-3', children: [
-        jsx('label', { className: 'grid gap-1 text-xs', children: [
-          jsx('span', { children: 'From' }, 'label'),
-          jsx('input', { type: 'date', 'aria-label': 'History from date', value: dateFrom, onChange: event => setDateFrom(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
-        ] }),
-        jsx('label', { className: 'grid gap-1 text-xs', children: [
-          jsx('span', { children: 'To' }, 'label'),
-          jsx('input', { type: 'date', 'aria-label': 'History to date', value: dateTo, onChange: event => setDateTo(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
-        ] }),
-        jsx('label', { className: 'grid gap-1 text-xs', children: [
-          jsx('span', { children: 'Operation' }, 'label'),
-          jsx('select', { 'aria-label': 'History operation', value: operation, onChange: event => setOperation(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
-            jsx('option', { value: '', children: 'All operations' }, 'all'),
-            ...['approve', 'reject', 'add', 'edit', 'delete', 'compact', 'import'].map(item => jsx('option', { value: item, children: item }, item))
-          ] }, 'select')
-        ] }),
-        jsx('label', { className: 'grid gap-1 text-xs', children: [
-          jsx('span', { children: 'Result' }, 'label'),
-          jsx('select', { 'aria-label': 'History result', value: result, onChange: event => setResult(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
-            jsx('option', { value: '', children: 'All results' }, 'all'),
-            ...['success', 'failure', 'partial'].map(item => jsx('option', { value: item, children: item }, item))
-          ] }, 'select')
-        ] })
-      ] }),
+      jsxs('div', {
+        className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-2',
+        children: [
+          jsx('button', {
+            type: 'button',
+            'aria-expanded': filtersOpen,
+            'aria-controls': historyFiltersId,
+            onClick: () => setFiltersOpen(open => !open),
+            className: 'text-left text-xs font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+            children: activeFilterCount ? `Filters · ${activeFilterCount} active` : 'Filters'
+          }, 'toggle'),
+          jsxs('div', {
+            id: historyFiltersId,
+            hidden: !filtersOpen,
+            className: 'mt-2',
+            children: [
+              jsxs('div', {
+                className: 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4',
+                children: [
+              jsx('label', { className: 'grid gap-1 text-xs', children: [
+                jsx('span', { children: 'From' }, 'label'),
+                jsx('input', { type: 'date', 'aria-label': 'History from date', value: dateFrom, onChange: event => setDateFrom(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
+              ] }, 'from'),
+              jsx('label', { className: 'grid gap-1 text-xs', children: [
+                jsx('span', { children: 'To' }, 'label'),
+                jsx('input', { type: 'date', 'aria-label': 'History to date', value: dateTo, onChange: event => setDateTo(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1' }, 'input')
+              ] }, 'to'),
+              jsx('label', { className: 'grid gap-1 text-xs', children: [
+                jsx('span', { children: 'Operation' }, 'label'),
+                jsx('select', { 'aria-label': 'History operation', value: operation, onChange: event => setOperation(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
+                  jsx('option', { value: '', children: 'All operations' }, 'all'),
+                  ...['approve', 'reject', 'add', 'edit', 'delete', 'compact', 'import'].map(item => jsx('option', { value: item, children: item }, item))
+                ] }, 'select')
+              ] }, 'operation'),
+              jsx('label', { className: 'grid gap-1 text-xs', children: [
+                jsx('span', { children: 'Result' }, 'label'),
+                jsx('select', { 'aria-label': 'History result', value: result, onChange: event => setResult(event.target.value), className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1', children: [
+                  jsx('option', { value: '', children: 'All results' }, 'all'),
+                  ...['success', 'failure', 'partial'].map(item => jsx('option', { value: item, children: item }, item))
+                ] }, 'select')
+              ] }, 'result')
+                ]
+              }, 'filter-fields'),
+              activeFilterCount ? jsx(ActionButton, { onClick: resetFilters, className: 'mt-2', children: 'Reset filters' }, 'reset') : null
+            ]
+          }, 'controls')
+        ]
+      }),
       feedback ? jsx('p', { role: 'status', className: 'px-4 py-2 text-xs', children: feedback }) : null,
       history.error ? jsx('p', { role: 'alert', className: 'px-4 py-2 text-xs text-(--ui-danger,#f87171)', children: 'Local history could not be loaded.' }) : null,
       jsx('section', { className: 'min-h-0 flex-1 overflow-auto p-4', children: records.length
@@ -2159,7 +2290,7 @@ function MagiPage(props) {
           }),
           jsx('nav', {
             'aria-label': 'Magi sections',
-            className: 'ml-auto flex gap-1 rounded-lg bg-(--chrome-action-hover) p-1',
+            className: 'ml-auto flex max-w-full gap-1 overflow-x-auto rounded-lg bg-(--chrome-action-hover) p-1',
             children: [
               ['pending', 'Pending writes', 'Review queue'],
               ['stored', 'Stored memory', 'Durable context'],
@@ -2168,10 +2299,11 @@ function MagiPage(props) {
               jsx(SegmentedChoice, {
                 onClick: () => selectMode(id),
                 selected: mode === id,
+                className: 'shrink-0',
                 children: jsxs('span', {
                   className: 'min-w-0',
                   children: [
-                    jsx('span', { className: 'block text-xs font-medium', children: label }),
+                    jsx('span', { className: 'block whitespace-nowrap text-xs font-medium', children: label }),
                     jsx('span', { className: `hidden text-[0.625rem] md:block ${mode === id ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'}`, children: hint })
                   ]
                 })
