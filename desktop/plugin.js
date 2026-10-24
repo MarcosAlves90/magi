@@ -678,7 +678,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
   })
 }
 
-function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, source }) {
+function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, source }) {
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
@@ -691,6 +691,8 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [compactionElapsed, setCompactionElapsed] = useState(0)
   const [applyingCompaction, setApplyingCompaction] = useState(false)
   const [compactionPreview, setCompactionPreview] = useState(null)
+  const [organizationAnalysis, setOrganizationAnalysis] = useState(null)
+  const [analyzing, setAnalyzing] = useState(false)
   const [transferPreview, setTransferPreview] = useState(null)
   const [importing, setImporting] = useState(false)
   const [feedback, setFeedback] = useState(null)
@@ -740,6 +742,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setAdding(false)
     setDeleteConfirm(false)
     setCompactionPreview(null)
+    setOrganizationAnalysis(null)
     setFeedback(null)
   }
 
@@ -793,6 +796,21 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
     } finally {
       setImporting(false)
+    }
+  }
+
+  const analyze = async () => {
+    setAnalyzing(true)
+    setOrganizationAnalysis(null)
+    setFeedback(null)
+    try {
+      const result = await analyzeOrganization(target)
+      if (!result?.success) throw new Error(result?.error || 'AI organization analysis failed; memory was not changed.')
+      setOrganizationAnalysis(result)
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setAnalyzing(false)
     }
   }
 
@@ -1081,20 +1099,59 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 jsx('span', { children: compacting ? 'Compacting…' : 'Compact with AI' })
               ]
             })
+          }),
+          jsx(ActionButton, {
+            disabled: analyzing || compacting || applyingCompaction || saving || deleting || !targetData.count,
+            onClick: analyze,
+            children: analyzing ? 'Analyzing…' : 'Analyze organization'
           })
         ]
       }),
       jsx('p', {
         role: 'note',
         className: 'border-b border-(--ui-stroke-secondary) px-4 py-2 text-xs text-(--ui-text-tertiary)',
-        children: 'Memory exports may contain private information. Magi creates downloads locally and does not upload export files.'
+        children: 'Memory exports may contain private information; Magi creates downloads locally and does not upload export files. AI analysis sends this selected store to the configured model only when you choose Analyze organization; it does not change memory.'
       }),
       feedback
         ? jsx('div', {
+            role: feedback.kind === 'error' ? 'alert' : 'status',
             className: `shrink-0 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-2.5 text-xs animate-in fade-in-0 duration-150 ${
               feedback.kind === 'error' ? 'text-(--ui-danger,#f87171)' : 'text-(--ui-text-tertiary)'
             }`,
             children: feedback.message
+          })
+        : null,
+      organizationAnalysis
+        ? jsxs('section', {
+            'aria-label': 'Memory organization suggestions',
+            className: 'shrink-0 max-h-[40vh] overflow-auto border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3',
+            children: [
+              jsx('h2', { className: 'text-sm font-semibold', children: 'Memory organization suggestions' }),
+              jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'AI findings are uncertain suggestions. They have not been applied; possible contradictions may instead reflect dates or context.' }),
+              organizationAnalysis.discarded_suggestions
+                ? jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: `${organizationAnalysis.discarded_suggestions} suggestion(s) with unsupported sources were discarded.` })
+                : null,
+              organizationAnalysis.suggestions?.length
+                ? jsx('ol', {
+                    className: 'mt-2 space-y-2',
+                    children: organizationAnalysis.suggestions.map((suggestion, index) =>
+                      jsxs('li', {
+                        className: 'rounded-md border border-(--ui-stroke-secondary) p-3 text-xs',
+                        children: [
+                          jsx('div', { className: 'font-semibold capitalize', children: suggestion.kind.replaceAll('_', ' ') }, 'kind'),
+                          jsx('p', { className: 'mt-1', children: suggestion.reason }, 'reason'),
+                          jsx('ul', { className: 'mt-2 space-y-1', children: suggestion.evidence.map((citation, citationIndex) => jsx('li', { className: 'text-(--ui-text-tertiary)', children: `Evidence · entry ${citation.entry_index}: “${citation.quote}”` }, citationIndex)) }, 'evidence'),
+                          jsx('ul', { className: 'mt-2 space-y-1', children: suggestion.entry_indexes.map(entryIndex => {
+                            const sourceEntry = organizationAnalysis.sources?.find(item => item.entry_index === entryIndex)
+                            return sourceEntry ? jsx('li', { className: 'whitespace-pre-wrap break-words rounded bg-(--ui-bg-secondary) p-2', children: `Original entry ${sourceEntry.entry_index}: ${sourceEntry.content}` }, sourceEntry.entry_index) : null
+                          }) }, 'sources'),
+                          jsx('p', { className: 'mt-2 text-(--ui-text-tertiary)', children: `Uncertainty: ${suggestion.uncertainty}` }, 'uncertainty')
+                        ]
+                      }, `${suggestion.kind}:${index}`)
+                    )
+                  })
+                : jsx('p', { className: 'mt-2 text-xs text-(--ui-text-tertiary)', children: 'No source-verified suggestions were returned.' })
+            ]
           })
         : null,
       transferPreview
@@ -1544,6 +1601,7 @@ function MagiPage(props) {
                 applyCompaction: props.applyCompaction,
                 previewMemoryImport: props.previewMemoryImport,
                 applyMemoryImport: props.applyMemoryImport,
+                analyzeOrganization: props.analyzeOrganization,
                 source: props.source
               }) : jsx(HistoryPage, { loadHistory: props.loadHistory, clearHistory: props.clearHistory, source: props.source })
       })
@@ -1603,6 +1661,11 @@ export default {
         method: 'POST',
         body: { ...payload, source_fingerprints: sourceFingerprints, confirmed: true }
       })
+    const analyzeOrganization = async target => {
+      const result = await ctx.rest(`/memory/${encodeURIComponent(target)}/organization/analyze`, { method: 'POST' })
+      if (!result?.success) throw new Error(result?.error || 'AI organization analysis failed; memory was not changed.')
+      return result
+    }
     const runDecision = async (action, target) => {
       const parsed = await ctx.rest(`/records/${encodeURIComponent(target)}/decision`, {
         method: 'POST',
@@ -1632,6 +1695,7 @@ export default {
             applyCompaction,
             previewMemoryImport,
             applyMemoryImport,
+            analyzeOrganization,
             runDecision,
             source: ctx.source
           })

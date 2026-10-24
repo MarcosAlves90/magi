@@ -2,6 +2,9 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-017: added an explicit, read-only AI organization analysis for stored
+  memory. Suggestions cite exact original text, expose uncertainty, discard
+  invalid references, and make one bounded request without applying changes.
 - MAGI-016: added a profile-local, metadata-only history for mutating Magi
   actions, with bounded retention, restricted file permissions, date/operation/
   outcome filters, confirmed clearing, and explicit warnings when audit writes

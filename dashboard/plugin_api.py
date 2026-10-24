@@ -30,6 +30,7 @@ _core = runpy.run_path(str(_PLUGIN_ROOT / "core.py"))
 MagiReview = _core["MagiReview"]
 resolve_hermes_home = _core["resolve_hermes_home"]
 build_memory_compaction_preview = _core["build_memory_compaction_preview"]
+build_memory_organization_analysis = _core["build_memory_organization_analysis"]
 memory_source_fingerprint = _core["memory_source_fingerprint"]
 _memory_compaction_budgets = _core["_memory_compaction_budgets"]
 _memory_compaction_max_entries = _core["_memory_compaction_max_entries"]
@@ -693,6 +694,20 @@ def delete_stored_memory(target: str, body: MemoryDeleteRequest) -> Dict[str, An
         "audit_warning": result.get("audit_warning"),
         "target": _memory_target(store, target),
     }
+
+
+@router.post("/memory/{target}/organization/analyze")
+def analyze_memory_organization(target: str) -> Dict[str, Any]:
+    if target not in {"memory", "user"}:
+        return {"success": False, "error": "target must be 'memory' or 'user'."}
+    try:
+        store = _memory_store()
+        entries = list(store.memory_entries if target == "memory" else store.user_entries)
+        if not entries or len(entries) > _core["MEMORY_ORGANIZATION_MAX_ENTRIES"] or len(_entry_delimiter().join(entries)) > _core["MEMORY_ORGANIZATION_MAX_CHARS"]:
+            return build_memory_organization_analysis(None, target, entries, _entry_delimiter())
+        return build_memory_organization_analysis(_plugin_llm(), target, entries, _entry_delimiter())
+    except Exception:
+        return {"success": False, "error": "AI organization analysis failed; memory was not changed."}
 
 
 @router.post("/memory/{target}/compact/preview")
