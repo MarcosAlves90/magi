@@ -27,6 +27,7 @@ In Hermes Desktop, go to **Capabilities → Plugins** and enable both the **Agen
 
 - **Pending writes:** Review each proposal using **Overview**, **Proposal**, **Diff**, **Raw**, or **Verify**, then approve or reject it. Bulk actions require confirmation. Proposals targeting entries that no longer exist are marked obsolete and can be removed with **Delete obsolete**.
 - **Stored memory:** Switch between **Memory** (`MEMORY.md`) and **User** (`USER.md`). Search entries, inspect usage and remaining capacity, and add or edit entries. Deletion requires confirmation.
+- **Memory transfer:** Export Memory, User, or both as a versioned JSON download generated locally. Exports may contain private information; Magi does not upload the file. Import accepts only this JSON format (up to 1 MB/1,000 entries), previews missing entries against the active character budget, and adds them only after confirmation. Existing entries are never overwritten. Each target is validated before writes, but multi-target writes are separate native batches and are not atomic together; concurrent changes can still race between preview and application.
 - **Resizable views:** Drag the lower edge of the pending-write inspector or stored-memory editor to change its height.
 - **AI compaction:** Select a store and choose **Compact with AI** to review a proposed shorter version. Magi accepts a preview only if it uses at most 60% of the original characters (at least a 40% reduction); it can retry up to three times. If no safe reduction is available, the memory stays unchanged. Nothing is written until you choose **Apply compaction**. Magi rejects a stale source at its initial fingerprint check and Hermes rejects missing or changed pinned entries under its batch lock. Concurrent additions may still be preserved; this is not a full-snapshot check under the lock.
 
@@ -79,7 +80,7 @@ Use the terminal for large records that may exceed chat message limits.
 - **Local reads:** Magi reads the active profile's pending-memory records and Hermes' `MEMORY.md` / `USER.md` stores. `home_override` can redirect these reads to a home directory you select.
 - **Changes:** Approval, rejection, entry edits and compaction require explicit user actions. Writes go through Hermes' native memory APIs; Magi does not edit the stores directly.
 - **AI access:** Compaction sends the selected memory content through Hermes' `ctx.llm` interface to the configured model/provider. Hermes owns provider credentials; Magi does not read or store them.
-- **Other activity:** Magi makes no direct third-party network calls, launches no shell commands or subprocesses, runs no long-lived background jobs, and collects no telemetry or usage data. While its Desktop page is open, it polls the local plugin backend every five seconds.
+- **Other activity:** Magi makes no direct third-party network calls, launches no shell commands or subprocesses, runs no long-lived background jobs, and collects no telemetry or usage data. While its Desktop page is open, it polls the local plugin backend every five seconds. Memory export downloads are assembled in the browser as local JSON data URLs and are never sent to an export service.
 
 ## Development
 

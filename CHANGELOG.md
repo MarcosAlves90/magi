@@ -2,6 +2,11 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-015: added local versioned JSON export and a bounded import preview
+  for Memory, User, or both. Imports validate schema, duplicates, Hermes entry
+  delimiters and character budgets, then add only missing entries through
+  Hermes' native batch API after explicit confirmation. Per-target partial
+  results and concurrency/atomicity limits are documented.
 - MAGI-014: introduced isolated Hermes compatibility CI jobs pinned to exact
   SHAs for the 0.21.5 minimum (`v2026.9.24`, Python 3.13), the existing pinned
   revision and latest stable `v0.22.5`; the two baseline jobs are required and

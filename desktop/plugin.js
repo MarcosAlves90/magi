@@ -678,7 +678,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
   })
 }
 
-function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, source }) {
+function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, source }) {
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
@@ -691,6 +691,8 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [compactionElapsed, setCompactionElapsed] = useState(0)
   const [applyingCompaction, setApplyingCompaction] = useState(false)
   const [compactionPreview, setCompactionPreview] = useState(null)
+  const [transferPreview, setTransferPreview] = useState(null)
+  const [importing, setImporting] = useState(false)
   const [feedback, setFeedback] = useState(null)
 
   const stored = useQuery({
@@ -745,6 +747,53 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setAdding(false)
     setDeleteConfirm(false)
     setSelectedText(content)
+  }
+
+  const exportMemory = selectedTarget => {
+    const selectedTargets = selectedTarget === 'both' ? STORED_TARGETS.map(([id]) => id) : [selectedTarget]
+    const entries = Object.fromEntries(selectedTargets.map(id => [
+      id,
+      (stored.data?.targets?.[id]?.entries || []).map(entry => entry.content)
+    ]))
+    return encodeURIComponent(JSON.stringify({
+      format_version: 1,
+      target: selectedTarget,
+      entries: selectedTarget === 'both' ? entries : entries[selectedTarget]
+    }, null, 2))
+  }
+
+  const previewImportFile = async event => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setFeedback(null)
+    setTransferPreview(null)
+    try {
+      if (file.size > 1_000_000) throw new Error('Import file exceeds the 1 MB limit.')
+      const payload = JSON.parse(await file.text())
+      const preview = await previewMemoryImport(payload)
+      if (!preview?.success) throw new Error(preview?.error || 'Memory import preview failed.')
+      setTransferPreview({ payload, preview })
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const confirmImport = async () => {
+    if (!transferPreview) return
+    setImporting(true)
+    setFeedback(null)
+    try {
+      const result = await applyMemoryImport(transferPreview.payload, transferPreview.preview.source_fingerprints)
+      const statuses = Object.entries(result?.outcomes || {}).map(([id, outcome]) => `${id}: ${outcome.status}${outcome.added_count ? ` (${outcome.added_count} added)` : ''}${outcome.error ? ` — ${outcome.error}` : ''}`)
+      setFeedback({ kind: result?.success ? 'success' : 'error', message: statuses.join(' · ') || 'Import completed.' })
+      if (result?.success) setTransferPreview(null)
+      await stored.refetch()
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setImporting(false)
+    }
   }
 
   const beginAdd = () => {
@@ -971,6 +1020,34 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               }, id)
             )
           }),
+          jsx('a', {
+            role: 'button',
+            'aria-disabled': importing || !stored.data,
+            tabIndex: importing || !stored.data ? -1 : 0,
+            className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+            href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
+            download: `magi-memory-${target}.json`,
+            children: `Export ${target}`
+          }),
+          jsx('a', {
+            role: 'button',
+            'aria-disabled': importing || !stored.data,
+            tabIndex: importing || !stored.data ? -1 : 0,
+            className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
+            href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
+            download: 'magi-memory-both.json',
+            children: 'Export both'
+          }),
+          jsxs('label', {
+            className: 'inline-flex cursor-pointer items-center rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-xs font-medium hover:bg-(--chrome-action-hover)',
+            children: [
+              jsx('span', { children: 'Import JSON' }, 'label'),
+              jsx('input', {
+                type: 'file', accept: 'application/json,.json', 'aria-label': 'Import memory JSON',
+                className: 'sr-only', onChange: previewImportFile
+              }, 'input')
+            ]
+          }),
           jsx(ActionButton, {
             disabled: compacting || applyingCompaction || saving || deleting,
             onClick: beginAdd,
@@ -1007,12 +1084,45 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
           })
         ]
       }),
+      jsx('p', {
+        role: 'note',
+        className: 'border-b border-(--ui-stroke-secondary) px-4 py-2 text-xs text-(--ui-text-tertiary)',
+        children: 'Memory exports may contain private information. Magi creates downloads locally and does not upload export files.'
+      }),
       feedback
         ? jsx('div', {
             className: `shrink-0 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-2.5 text-xs animate-in fade-in-0 duration-150 ${
               feedback.kind === 'error' ? 'text-(--ui-danger,#f87171)' : 'text-(--ui-text-tertiary)'
             }`,
             children: feedback.message
+          })
+        : null,
+      transferPreview
+        ? jsxs('section', {
+            'aria-label': 'Memory import preview',
+            className: 'shrink-0 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3',
+            children: [
+              jsx('h2', { className: 'text-sm font-semibold', children: 'Import preview · missing entries only' }),
+              jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'Existing entries will be kept. Nothing is written until you confirm. Targets are applied separately and may not be atomic together.' }),
+              Object.entries(transferPreview.preview.targets || {}).map(([id, plan]) =>
+                jsxs('div', {
+                  className: 'mt-2 rounded-md border border-(--ui-stroke-secondary) p-2 text-xs',
+                  children: [
+                    jsx('div', { className: 'font-medium', children: `${id}: ${plan.additions.length} to add · ${plan.skipped_count} already present` }),
+                    plan.additions.length
+                      ? jsx('ul', { className: 'mt-1 list-disc space-y-1 pl-4', children: plan.additions.map((entry, index) => jsx('li', { className: 'whitespace-pre-wrap break-words', children: entry }, `${id}:${index}`)) })
+                      : jsx('p', { className: 'mt-1 text-(--ui-text-tertiary)', children: 'No missing entries.' })
+                  ]
+                }, id)
+              ),
+              jsxs('div', {
+                className: 'mt-3 flex justify-end gap-2',
+                children: [
+                  jsx(ActionButton, { disabled: importing, onClick: () => setTransferPreview(null), children: 'Cancel import' }),
+                  jsx(ActionButton, { tone: 'primary', disabled: importing, onClick: confirmImport, children: importing ? 'Importing…' : 'Confirm import' })
+                ]
+              })
+            ]
           })
         : null,
       compacting
@@ -1346,6 +1456,8 @@ function MagiPage(props) {
                 deleteStoredMemory: props.deleteStoredMemory,
                 requestCompaction: props.requestCompaction,
                 applyCompaction: props.applyCompaction,
+                previewMemoryImport: props.previewMemoryImport,
+                applyMemoryImport: props.applyMemoryImport,
                 source: props.source
               })
       })
@@ -1389,6 +1501,13 @@ export default {
         method: 'POST',
         body: { source_fingerprint: sourceFingerprint, entries }
       })
+    const previewMemoryImport = payload =>
+      ctx.rest('/memory/import/preview', { method: 'POST', body: payload })
+    const applyMemoryImport = (payload, sourceFingerprints) =>
+      ctx.rest('/memory/import', {
+        method: 'POST',
+        body: { ...payload, source_fingerprints: sourceFingerprints, confirmed: true }
+      })
     const runDecision = async (action, target) => {
       const parsed = await ctx.rest(`/records/${encodeURIComponent(target)}/decision`, {
         method: 'POST',
@@ -1413,6 +1532,8 @@ export default {
             deleteStoredMemory,
             requestCompaction,
             applyCompaction,
+            previewMemoryImport,
+            applyMemoryImport,
             runDecision,
             source: ctx.source
           })

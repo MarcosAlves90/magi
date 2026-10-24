@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt
 
 
 _PLUGIN_ID = "magi"
@@ -33,6 +33,8 @@ router = APIRouter()
 
 _MEMORY_CHARS_PER_TOKEN = 2.75
 _TOKEN_ESTIMATE_METHOD = "hermes_memory_budget_2.75_chars_per_token"
+_MEMORY_IMPORT_MAX_BYTES = 1_000_000
+_MEMORY_IMPORT_MAX_ENTRIES = 1_000
 _RUNTIME_BRIDGE_PATH = (_PLUGIN_ROOT / "runtime_bridge.py").resolve()
 
 
@@ -52,6 +54,17 @@ class MemoryDeleteRequest(BaseModel):
 class MemoryCompactionApplyRequest(BaseModel):
     source_fingerprint: str
     entries: List[str]
+
+
+class MemoryImportPreviewRequest(BaseModel):
+    format_version: StrictInt
+    target: str
+    entries: Any
+
+
+class MemoryImportApplyRequest(MemoryImportPreviewRequest):
+    source_fingerprints: Dict[str, str]
+    confirmed: bool = False
 
 
 class PendingDecisionRequest(BaseModel):
@@ -130,6 +143,46 @@ def _estimate_tokens(text: str) -> int:
 
 def _source_fingerprint(entries: List[str]) -> str:
     return memory_source_fingerprint(entries)
+
+
+def _memory_import_plans(store: Any, body: MemoryImportPreviewRequest) -> Dict[str, Dict[str, Any]]:
+    if body.format_version != 1:
+        raise HTTPException(status_code=400, detail="Unsupported memory export format_version.")
+    if body.target not in {"memory", "user", "both"}:
+        raise HTTPException(status_code=400, detail="target must be 'memory', 'user', or 'both'.")
+    if body.target == "both":
+        if not isinstance(body.entries, dict) or set(body.entries) != {"memory", "user"}:
+            raise HTTPException(status_code=400, detail="Both-target imports require memory and user entry arrays.")
+        imported = body.entries
+    else:
+        if not isinstance(body.entries, list):
+            raise HTTPException(status_code=400, detail="entries must be an array for a single target.")
+        imported = {body.target: body.entries}
+    if len(json.dumps(body.model_dump(), ensure_ascii=False).encode("utf-8")) > _MEMORY_IMPORT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Memory import exceeds the 1 MB limit.")
+
+    plans = {}
+    delimiter = _entry_delimiter()
+    for target, entries in imported.items():
+        if not isinstance(entries, list) or len(entries) > _MEMORY_IMPORT_MAX_ENTRIES:
+            raise HTTPException(status_code=400, detail="Each imported target must contain at most 1000 entries.")
+        if any(not isinstance(entry, str) or not entry.strip() for entry in entries):
+            raise HTTPException(status_code=400, detail="Imported entries must be non-empty strings.")
+        if any(delimiter in entry for entry in entries):
+            raise HTTPException(status_code=400, detail="Imported entry contains the Hermes memory delimiter.")
+        if len(set(entries)) != len(entries):
+            raise HTTPException(status_code=400, detail="Imported entries must not contain duplicates.")
+        current = list(store.memory_entries if target == "memory" else store.user_entries)
+        additions = [entry for entry in entries if entry not in current]
+        if len(delimiter.join([*current, *additions])) > int(store._char_limit(target)):
+            raise HTTPException(status_code=400, detail=f"Import exceeds the {target} character budget.")
+        plans[target] = {
+            "source_fingerprint": _source_fingerprint(current),
+            "existing_count": len(current),
+            "skipped_count": len(entries) - len(additions),
+            "additions": additions,
+        }
+    return plans
 
 
 def _plugin_llm() -> Any:
@@ -372,6 +425,56 @@ def stored_memory() -> Dict[str, Any]:
             "memory": _memory_target(store, "memory"),
             "user": _memory_target(store, "user"),
         }
+    }
+
+
+@router.post("/memory/import/preview")
+def preview_memory_import(body: MemoryImportPreviewRequest) -> Dict[str, Any]:
+    plans = _memory_import_plans(_memory_store(), body)
+    response = {
+        "success": True,
+        "target": body.target,
+        "source_fingerprints": {target: plan["source_fingerprint"] for target, plan in plans.items()},
+        "targets": plans,
+    }
+    if body.target != "both":
+        response.update(plans[body.target])
+    return response
+
+
+@router.post("/memory/import")
+def apply_memory_import(body: MemoryImportApplyRequest) -> Dict[str, Any]:
+    if body.confirmed is not True:
+        raise HTTPException(status_code=400, detail="Explicit confirmation is required before importing.")
+    store = _memory_store()
+    plans = _memory_import_plans(store, body)
+    if set(body.source_fingerprints) != set(plans):
+        raise HTTPException(status_code=400, detail="Import preview is incomplete; create a new preview.")
+    if any(body.source_fingerprints[target] != plan["source_fingerprint"] for target, plan in plans.items()):
+        raise HTTPException(status_code=409, detail="Stored memory changed after preview; review a fresh import preview.")
+
+    outcomes = {}
+    for target, plan in plans.items():
+        if not plan["additions"]:
+            outcomes[target] = {"status": "unchanged", "added_count": 0}
+            continue
+        try:
+            result = store.apply_batch(target, [
+                {"action": "add", "content": entry} for entry in plan["additions"]
+            ])
+        except Exception:
+            result = {"success": False, "error": "Hermes could not apply this target's batch."}
+        if result.get("success"):
+            outcomes[target] = {"status": "applied", "added_count": len(plan["additions"])}
+        else:
+            outcomes[target] = {"status": "failed", "error": result.get("error", "Import failed.")}
+    succeeded = sum(value["status"] in {"applied", "unchanged"} for value in outcomes.values())
+    failed = any(value["status"] == "failed" for value in outcomes.values())
+    return {
+        "success": not failed,
+        "partial": failed and succeeded > 0,
+        "outcomes": outcomes,
+        "targets": {target: _memory_target(store, target) for target in outcomes},
     }
 
 
