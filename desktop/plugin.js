@@ -205,7 +205,11 @@ function SegmentedChoice({ selected, disabled, onClick, children, className = ''
   })
 }
 
-function ActionButton({ children, tone = 'default', className = '', ...props }) {
+function ActionButton({ children, tone = 'default', className = '', tooltip, ...props }) {
+  if (tooltip) {
+    return jsx(ActionTooltipButton, { ...props, children, tone, className, tooltip })
+  }
+
   const toneClass =
     tone === 'danger'
       ? 'text-(--ui-danger,#f87171) hover:border-(--ui-danger,#f87171)'
@@ -220,16 +224,19 @@ function ActionButton({ children, tone = 'default', className = '', ...props }) 
   })
 }
 
-function ActionTooltipButton({ tooltip, ...props }) {
+function ActionTooltipButton({ tooltip, as = 'button', role, ...props }) {
   const tooltipId = useId()
+  const action = as === 'a'
+    ? jsx('a', { ...props, role: role || 'button', 'aria-describedby': tooltipId })
+    : jsx(ActionButton, { ...props, 'aria-describedby': tooltipId })
   return jsxs('span', {
     className: 'group relative inline-flex',
     children: [
-      jsx(ActionButton, { ...props, 'aria-describedby': tooltipId }),
+      action,
       jsx('span', {
         id: tooltipId,
         role: 'tooltip',
-        className: 'pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-max max-w-64 -translate-x-1/2 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-primary) px-2 py-1.5 text-left text-[0.6875rem] text-(--ui-text-primary) opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+        className: 'pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-max max-w-64 -translate-x-1/2 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-2 py-1.5 text-left text-[0.6875rem] text-(--ui-text-primary) opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
         children: tooltip
       })
     ]
@@ -1032,8 +1039,10 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry, loading })
         className: 'flex flex-wrap items-center gap-2 px-4 py-2 text-xs',
         children: [
           jsx('span', { className: 'mr-auto font-medium', children: diagnostics ? `Diagnostics · ${targetLabel} · ${longIndices.length} long · ${duplicateGroups.length} exact duplicate groups` : `Diagnostics · ${targetLabel} · loading` }),
-          jsx('button', {
-            type: 'button',
+          jsx(ActionTooltipButton, {
+            tooltip: open
+              ? 'Hide the read-only memory diagnostics.'
+              : 'Show read-only entry sizes, long entries, and exact duplicate groups; no AI or edits are involved.',
             'aria-expanded': open,
             'aria-controls': diagnosticsId,
             onClick: () => setOpen(value => !value),
@@ -1645,21 +1654,33 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 'aria-label': 'Memory transfer',
                 className: 'flex flex-wrap items-center gap-1',
                 children: [
-                  jsx('a', {
-                    role: 'button', 'aria-disabled': importing || !stored.data,
+                  jsx(ActionTooltipButton, {
+                    as: 'a',
+                    role: 'button',
+                    tooltip: 'Exports may contain private data. The download stays local; Magi does not upload export files.',
+                    'aria-disabled': importing || !stored.data,
                     tabIndex: importing || !stored.data ? -1 : 0,
                     className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
                     href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
                     download: `magi-memory-${target}.json`, children: `Export ${target}`
                   }, 'export-target'),
-                  jsx('a', {
-                    role: 'button', 'aria-disabled': importing || !stored.data,
+                  jsx(ActionTooltipButton, {
+                    as: 'a',
+                    role: 'button',
+                    tooltip: 'Both-store exports may contain private data. The download stays local and is not uploaded by Magi.',
+                    'aria-disabled': importing || !stored.data,
                     tabIndex: importing || !stored.data ? -1 : 0,
                     className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
                     href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
                     download: 'magi-memory-both.json', children: 'Export both stores'
                   }, 'export-both'),
-                  jsx(ActionButton, { disabled: importing || !stored.data, onClick: () => importFileInput.current?.click(), className: 'px-2 py-1 text-[0.6875rem]', children: 'Import JSON' }, 'import'),
+                  jsx(ActionTooltipButton, {
+                    disabled: importing || !stored.data,
+                    onClick: () => importFileInput.current?.click(),
+                    className: 'px-2 py-1 text-[0.6875rem]',
+                    tooltip: 'Import JSON is previewed first; no memory is written until you confirm.',
+                    children: 'Import JSON'
+                  }, 'import'),
                   jsx('input', {
                     ref: importFileInput, type: 'file', accept: 'application/json,.json',
                     'aria-label': 'Import memory JSON', tabIndex: -1, className: 'sr-only', onChange: previewImportFile
@@ -1676,7 +1697,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             className: 'px-2 py-1 text-[0.6875rem]',
             disabled: compacting || applyingCompaction || saving || deleting || !targetData.count || isDirty,
             onClick: compact,
-            title: 'Create a shorter draft for review. Stored memory changes only if you apply the proposal.',
+            tooltip: 'Sends selected memory to the configured AI model to draft a shorter version. Review and explicitly apply the proposal; nothing changes automatically.',
             children: jsxs('span', {
               className: 'inline-flex items-center gap-1.5',
               children: [
@@ -1708,12 +1729,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                     children: analyzing ? 'Analyzing…' : 'Review memory with AI'
                   }, 'review')
                 ]
-              }, 'ai'),
-              jsx('p', {
-                role: 'note',
-                className: 'min-w-64 flex-1 text-[0.6875rem] leading-tight text-(--ui-text-tertiary)',
-                children: 'Selected memory is sent to Hermes’ configured AI; suggestions require review and are never auto-applied. Exports may contain private data; downloads stay local and Magi does not upload export files. Imports are previewed and require confirmation.'
-              }, 'data-handling')
+              }, 'ai')
             ]
           })
         ]

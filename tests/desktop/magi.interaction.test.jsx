@@ -142,7 +142,9 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     expect(screen.getByRole('button', { name: 'Export both stores' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Compact with AI' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Review memory with AI' })).toBeTruthy()
-    expect(screen.getByText(/does not upload export files/)).toBeTruthy()
+    const exportButton = screen.getByRole('button', { name: 'Export memory' })
+    const exportTooltip = document.getElementById(exportButton.getAttribute('aria-describedby'))
+    expect(exportTooltip?.textContent).toMatch(/does not upload export files/)
     const workspace = screen.getByRole('region', { name: 'Stored memory workspace' })
     expect(workspace.querySelectorAll('details')).toHaveLength(0)
 
@@ -150,7 +152,7 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     expect(await screen.findByText(/Entry sizes \(characters\)/)).toBeTruthy()
   })
 
-  it('keeps transfer and AI controls in one compact accessible region with their safety notice', async () => {
+  it('keeps non-obvious memory actions described by accessible tooltips instead of a side notice', async () => {
     const { mount } = fixture()
     mount()
     fireEvent.click(btn('Stored memory Durable context'))
@@ -160,9 +162,27 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     expect(toolbar, 'all transfer and AI controls share one compact accessible region').toBeTruthy()
     expect(within(toolbar).getByRole('group', { name: 'Memory transfer' })).toBeTruthy()
     expect(within(toolbar).getByRole('group', { name: 'Memory AI actions' })).toBeTruthy()
-    expect(within(toolbar).getAllByRole('note')).toHaveLength(1)
-    expect(within(toolbar).getByRole('note').textContent).toMatch(/selected memory.*configured AI.*review.*never auto-applied/i)
-    expect(within(toolbar).getByRole('note').textContent).toMatch(/private data.*stay local.*previewed.*confirmation/i)
+    expect(within(toolbar).queryByRole('note'), 'no adjacent note; all non-obvious actions have accessible tooltips').toBeNull()
+
+    const expectTooltip = (button, expectedText) => {
+      const tooltipId = button.getAttribute('aria-describedby')
+      expect(tooltipId).toBeTruthy()
+      const tooltip = document.getElementById(tooltipId)
+      expect(tooltip?.getAttribute('role')).toBe('tooltip')
+      expect(tooltip?.textContent).toMatch(expectedText)
+      expect(tooltip?.className).toContain('bg-(--ui-bg-elevated)')
+      expect(tooltip?.className).toContain('group-hover:opacity-100')
+      expect(tooltip?.className).toContain('group-focus-within:opacity-100')
+      return tooltip
+    }
+
+    expectTooltip(within(toolbar).getByRole('button', { name: 'Export memory' }), /private.*local.*does not upload export files/i)
+    expectTooltip(within(toolbar).getByRole('button', { name: 'Export both stores' }), /private.*local.*not uploaded/i)
+    expectTooltip(within(toolbar).getByRole('button', { name: 'Import JSON' }), /preview.*confirm/i)
+    expectTooltip(within(toolbar).getByRole('button', { name: 'Compact with AI' }), /configured AI.*review.*apply.*nothing changes automatically/i)
+    expectTooltip(within(toolbar).getByRole('button', { name: 'Review memory with AI' }), /selected memory.*suggestions.*nothing is applied automatically/i)
+    expectTooltip(screen.getByRole('button', { name: 'Inspect diagnostics' }), /read-only.*entry sizes.*duplicate/i)
+    expect(screen.getByRole('button', { name: 'Add entry' }).getAttribute('aria-describedby')).toBeNull()
   })
 
   it('activates the real navigation with keyboard Enter and exposes selected state', async () => {
