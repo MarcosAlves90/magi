@@ -292,7 +292,7 @@ def test_magi_segmented_selectors_share_clear_active_states():
     assert "selected: target === id" in stored
     assert "selected: mode === id" in workspace
     assert "onClick: () => selectTarget(id)" in stored
-    assert "onClick: () => setMode(id)" in workspace
+    assert "onClick: () => selectMode(id)" in workspace
 
 
 def test_magi_segmented_selectors_preserve_navigation_and_compact_toolbar():

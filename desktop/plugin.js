@@ -1,5 +1,5 @@
 import { ROUTES_AREA, SIDEBAR_NAV_AREA, useQuery } from '@hermes/plugin-sdk'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 const VIEWS = [
@@ -129,6 +129,13 @@ function validateCompactionEdits(sourceEntries, editedEntries) {
   if (afterChars >= beforeChars || afterChars > maxChars) errors.push(`Proposal must be shorter and no more than ${maxChars} characters.`)
   return { valid: errors.length === 0, errors, normalized, beforeChars, afterChars, maxEntries, maxChars,
     reductionPercent: beforeChars ? Math.round((1 - afterChars / beforeChars) * 1000) / 10 : 0 }
+}
+
+function resolveStoredDraft(slots, key, base, fingerprint) {
+  const slot = slots[key]
+  const text = slot ? slot.text : base
+  const dirty = Boolean(slot && text !== slot.base)
+  return { text, dirty, conflict: Boolean(dirty && slot.sourceFingerprint && fingerprint !== slot.sourceFingerprint) }
 }
 
 const CONTROL_TRANSITION = 'transition-all duration-100 ease-out motion-reduce:transition-none'
@@ -948,11 +955,12 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry }) {
   })
 }
 
-function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, source }) {
+function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, source, navigationGuard }) {
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
-  const [draft, setDraft] = useState('')
+  const [draftSlots, setDraftSlots] = useState({})
+  const [pendingNavigation, setPendingNavigation] = useState(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -989,7 +997,21 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     : selectedText
       ? selectedEntry || { index: -1, content: selectedText, stale: true }
       : filtered[0] || entries[0] || null
-  const isDirty = Boolean(current && draft !== current.content)
+  const draftKey = `${target}:${adding ? 'new' : (current?.content || 'none')}`
+  const activeDraft = resolveStoredDraft(draftSlots, draftKey, adding ? '' : (current?.content || ''), targetData.source_fingerprint)
+  const draft = activeDraft.text
+  const isDirty = activeDraft.dirty
+  const draftConflict = isDirty && Boolean(current?.stale || activeDraft.conflict)
+  const setDraft = text => {
+    const base = adding ? '' : (current?.content || '')
+    setDraftSlots(previous => ({ ...previous, [draftKey]: {
+      base: previous[draftKey]?.base ?? base,
+      sourceFingerprint: previous[draftKey]?.sourceFingerprint ?? targetData.source_fingerprint,
+      text
+    } }))
+    // Pin the implicit first selection so the draft survives list reordering.
+    if (!adding && !selectedText && current?.content) setSelectedText(current.content)
+  }
   const targetLabel = target === 'memory' ? 'MEMORY.md' : 'USER.md'
   const previewDiff = useMemo(
     () => compactionPreview ? buildCompactionDiff(compactionPreview.source_entries || [], proposalEntries) : [],
@@ -1021,10 +1043,6 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const isPreviewStale = Boolean(compactionPreview && currentPreviewFingerprint && currentPreviewFingerprint !== compactionPreview.source_fingerprint)
 
   useEffect(() => {
-    if (!adding) setDraft(current?.content || '')
-  }, [target, adding, current?.content])
-
-  useEffect(() => {
     if (!compacting) return undefined
     const startedAt = Date.now()
     const updateElapsed = () => setCompactionElapsed(Math.floor((Date.now() - startedAt) / 1000))
@@ -1033,20 +1051,35 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     return () => clearInterval(timer)
   }, [compacting])
 
+  const guardNavigation = action => {
+    if (isDirty) setPendingNavigation(() => action)
+    else action()
+  }
+
+  useEffect(() => {
+    if (!navigationGuard) return undefined
+    navigationGuard.current = { dirty: isDirty, requestLeave: guardNavigation }
+    return () => { navigationGuard.current = null }
+  }, [navigationGuard, isDirty, draftKey, draftConflict])
+
   const selectTarget = nextTarget => {
-    setTarget(nextTarget)
-    setSelectedText('')
-    setSearch('')
-    setAdding(false)
-    setDeleteConfirm(false)
-    setCompactionPreview(null)
-    setFeedback(null)
+    guardNavigation(() => {
+      setTarget(nextTarget)
+      setSelectedText('')
+      setSearch('')
+      setAdding(false)
+      setDeleteConfirm(false)
+      setCompactionPreview(null)
+      setFeedback(null)
+    })
   }
 
   const selectEntry = content => {
-    setAdding(false)
-    setDeleteConfirm(false)
-    setSelectedText(content)
+    guardNavigation(() => {
+      setAdding(false)
+      setDeleteConfirm(false)
+      setSelectedText(content)
+    })
   }
 
   const navigateToDiagnosticEntry = index => {
@@ -1056,17 +1089,19 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   }
 
   const beginAdd = () => {
-    setAdding(true)
-    setSelectedText('')
-    setDraft('')
-    setDeleteConfirm(false)
-    setCompactionPreview(null)
-    setFeedback(null)
+    guardNavigation(() => {
+      setAdding(true)
+      setSelectedText('')
+      setDraftSlots(previous => ({ ...previous, [`${target}:new`]: { base: '', text: '', sourceFingerprint: targetData.source_fingerprint } }))
+      setDeleteConfirm(false)
+      setCompactionPreview(null)
+      setFeedback(null)
+    })
   }
 
   const add = async () => {
     const content = draft.trim()
-    if (!content) return
+    if (!content) return false
     setSaving(true)
     setFeedback(null)
     try {
@@ -1075,33 +1110,72 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       setAdding(false)
       setSelectedText(content)
       await stored.refetch()
+      setDraftSlots(previous => {
+        const next = { ...previous }
+        delete next[`${target}:new`]
+        return next
+      })
+      return true
     } catch (error) {
       setFeedback({
         kind: 'error',
         message: error instanceof Error ? error.message : String(error)
       })
+      return false
     } finally {
       setSaving(false)
     }
   }
 
   const save = async () => {
-    if (!current) return
+    if (!current) return false
+    if (draftConflict) {
+      setFeedback({ kind: 'error', message: 'Draft source changed. Review the current entry before saving; your text was preserved.' })
+      return false
+    }
     setSaving(true)
     setFeedback(null)
     try {
       const result = await saveStoredMemory(target, current.content, draft)
       setFeedback({ kind: 'success', message: result?.result?.message || 'Memory entry updated.' })
-      setSelectedText(draft.trim())
+      const savedText = draft.trim()
+      setSelectedText(savedText)
       setDeleteConfirm(false)
       await stored.refetch()
+      setDraftSlots(previous => {
+        const next = { ...previous }
+        delete next[draftKey]
+        return next
+      })
+      return true
     } catch (error) {
       setFeedback({
         kind: 'error',
         message: error instanceof Error ? error.message : String(error)
       })
+      return false
     } finally {
       setSaving(false)
+    }
+  }
+
+  const discardAndContinue = () => {
+    const action = pendingNavigation
+    setDraftSlots(previous => {
+      const next = { ...previous }
+      delete next[draftKey]
+      return next
+    })
+    setPendingNavigation(null)
+    action?.()
+  }
+
+  const saveAndContinue = async () => {
+    const action = pendingNavigation
+    const success = adding ? await add() : await save()
+    if (success) {
+      setPendingNavigation(null)
+      action?.()
     }
   }
 
@@ -1309,7 +1383,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
           }),
           jsx(ActionButton, {
             tone: 'primary',
-            disabled: compacting || applyingCompaction || saving || deleting || !targetData.count,
+            disabled: compacting || applyingCompaction || saving || deleting || !targetData.count || isDirty,
             onClick: compact,
             className: 'focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
             children: jsxs('span', {
@@ -1343,6 +1417,19 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               feedback.kind === 'error' ? 'text-(--ui-danger,#f87171)' : 'text-(--ui-text-tertiary)'
             }`,
             children: feedback.message
+          })
+        : null,
+      pendingNavigation
+        ? jsxs('div', {
+            role: 'alertdialog',
+            'aria-label': 'Unsaved memory draft',
+            className: 'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3 text-xs',
+            children: [
+              jsx('span', { className: 'mr-auto font-medium', children: 'Unsaved memory draft. Save or discard before leaving this entry.' }),
+              jsx(ActionButton, { onClick: () => setPendingNavigation(null), children: 'Continue editing' }),
+              jsx(ActionButton, { tone: 'danger', onClick: discardAndContinue, children: 'Discard draft' }),
+              jsx(ActionButton, { tone: 'primary', disabled: saving || draftConflict || !draft.trim(), onClick: saveAndContinue, children: 'Save and continue' })
+            ]
           })
         : null,
       compacting
@@ -1571,7 +1658,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                       }),
                       jsx(ActionButton, {
                         disabled: saving,
-                        onClick: () => setAdding(false),
+                        onClick: () => guardNavigation(() => setAdding(false)),
                         children: 'Cancel'
                       }),
                       jsx(ActionButton, {
@@ -1627,14 +1714,14 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                       }),
                       jsx(ActionButton, {
                         tone: isDirty ? 'primary' : 'default',
-                        disabled: saving || !isDirty,
+                        disabled: saving || draftConflict || !isDirty,
                         onClick: save,
                         children: saving ? 'Saving…' : 'Save changes'
                       }),
                       jsx(ActionButton, {
                         tone: deleteConfirm ? 'danger' : 'default',
                         disabled: saving || deleting || current.stale,
-                        onClick: remove,
+                        onClick: () => guardNavigation(remove),
                         children: deleting ? 'Deleting…' : deleteConfirm ? 'Confirm delete' : 'Delete entry'
                       })
                     ]
@@ -1651,10 +1738,11 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                     title: 'Drag the lower edge or corner to resize this entry editor.',
                     spellCheck: false
                   }),
-                  current.stale
+                  draftConflict
                     ? jsx('div', {
                         className: 'border-t border-(--ui-stroke-secondary) px-4 py-2 text-xs text-(--ui-danger,#f87171)',
-                        children: 'This entry changed on disk. Your draft is preserved; saving it will be checked against the original entry and may be rejected as stale.'
+                        role: 'alert',
+                        children: 'Draft source changed since editing began. Your draft is preserved. Save is blocked until you review or discard the stale draft.'
                       })
                     : null,
                   jsx('div', {
@@ -1682,6 +1770,11 @@ function MagiPage(props) {
   const [decisionReport, setDecisionReport] = useState(null)
   const [feedback, setFeedback] = useState(null)
   const [bulkConfirm, setBulkConfirm] = useState('')
+  const navigationGuard = useRef(null)
+  const selectMode = id => {
+    if (mode === 'stored' && navigationGuard.current?.dirty) navigationGuard.current.requestLeave(() => setMode(id))
+    else setMode(id)
+  }
   return jsxs('div', {
     className: 'flex h-full min-h-0 flex-col',
     children: [
@@ -1703,7 +1796,7 @@ function MagiPage(props) {
               ['stored', 'Stored memory', 'Durable context']
             ].map(([id, label, hint]) =>
               jsx(SegmentedChoice, {
-                onClick: () => setMode(id),
+                onClick: () => selectMode(id),
                 selected: mode === id,
                 children: jsxs('span', {
                   className: 'min-w-0',
@@ -1735,7 +1828,8 @@ function MagiPage(props) {
                 deleteStoredMemory: props.deleteStoredMemory,
                 requestCompaction: props.requestCompaction,
                 applyCompaction: props.applyCompaction,
-                source: props.source
+                source: props.source,
+                navigationGuard
               })
       })
     ]

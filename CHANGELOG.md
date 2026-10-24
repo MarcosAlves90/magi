@@ -29,6 +29,9 @@
   (`\\n§\\n`), before native mutation. Invalid model proposals retry safely;
   existing malformed entries are flagged by read-only index diagnostics.
   Ordinary multiline and Unicode entries remain supported.
+- Preserved dirty stored-memory drafts during polling and guarded in-plugin
+  selection/section navigation with explicit continue, discard or save actions;
+  source changes disable Save until manually reconciled (MAGI-007).
 - Allowed manual editing, splitting, merging and removing compacted entries,
   with local estimates, duplicate/delimiter checks, backend-enforced budget
   and fingerprint preconditions, and explicit final confirmation (MAGI-006).
