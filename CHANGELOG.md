@@ -53,6 +53,9 @@
 - Added an explicitly authorized, optional AI preservation review of compaction
   snapshots with quoted evidence, omission/distortion/ambiguity suspicions and
   uncertainty labeling. Review failures never apply or alter proposals (MAGI-009).
+- Added elapsed-time feedback and an explicit "Stop waiting" action for
+  long-running compaction requests. Abandoning only ignores the late Desktop
+  response; it does not cancel backend work or imply that token costs stop (MAGI-019).
 
 - MAGI-017: added an explicit, read-only AI organization analysis for stored
   memory. Suggestions cite exact original text, expose uncertainty, discard

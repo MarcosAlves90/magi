@@ -138,6 +138,24 @@ function resolveStoredDraft(slots, key, base, fingerprint) {
   return { text, dirty, conflict: Boolean(dirty && slot.sourceFingerprint && fingerprint !== slot.sourceFingerprint) }
 }
 
+function isActiveCompactionRequest(requestId, currentId) {
+  return requestId === currentId
+}
+
+function classifyCompactionFailure(error) {
+  const message = error instanceof Error ? error.message : String(error?.message || error)
+  if (/timeout|timed out|deadline/i.test(message)) {
+    return `Request timed out while waiting: ${message}. Hermes or the model/provider may still finish; use Compact with AI to retry manually.`
+  }
+  if (/network|fetch|connect|unreachable|offline/i.test(message)) {
+    return `Network error: ${message}. Check the Hermes connection and retry manually.`
+  }
+  if (error?.kind === 'validation') {
+    return `Compaction validation failed: ${message}. Review the constraints before retrying.`
+  }
+  return `Compaction request failed: ${message}. No success was confirmed; check the stored memory before retrying.`
+}
+
 const CONTROL_TRANSITION = 'transition-all duration-100 ease-out motion-reduce:transition-none'
 const PANEL_TRANSITION = 'transition-[background-color,border-color,opacity] duration-150 ease-out motion-reduce:transition-none'
 const RESIZABLE_ENTRY_VIEWER = 'h-[48vh] min-h-40 max-h-[72vh] flex-none resize-y overflow-auto'
@@ -967,6 +985,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [compacting, setCompacting] = useState(false)
   const [compactionElapsed, setCompactionElapsed] = useState(0)
+  const compactionRequestId = useRef(0)
   const [applyingCompaction, setApplyingCompaction] = useState(false)
   const [compactionPreview, setCompactionPreview] = useState(null)
   const [previewView, setPreviewView] = useState('entries')
@@ -1069,9 +1088,9 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
 
   useEffect(() => {
     if (!navigationGuard) return undefined
-    navigationGuard.current = { dirty: isDirty, requestLeave: guardNavigation }
+    navigationGuard.current = { dirty: isDirty, busy: compacting || applyingCompaction, requestLeave: guardNavigation }
     return () => { navigationGuard.current = null }
-  }, [navigationGuard, isDirty, draftKey, draftConflict])
+  }, [navigationGuard, isDirty, draftKey, draftConflict, compacting, applyingCompaction])
 
   const selectTarget = nextTarget => {
     guardNavigation(() => {
@@ -1281,6 +1300,8 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   }
 
   const compact = async () => {
+    if (applyingCompaction || isDirty) return
+    const requestId = ++compactionRequestId.current
     setCompactionElapsed(0)
     setCompacting(true)
     setCompactionPreview(null)
@@ -1291,6 +1312,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     setFeedback(null)
     try {
       const preview = await requestCompaction(target)
+      if (!isActiveCompactionRequest(requestId, compactionRequestId.current)) return
       if (preview?.outcome === 'no_change') {
         setFeedback({
           kind: 'info',
@@ -1308,13 +1330,20 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       // against data at least as recent as the request (no extra AI call).
       await stored.refetch()
     } catch (error) {
-      setFeedback({
-        kind: 'error',
-        message: error instanceof Error ? error.message : String(error)
-      })
+      if (!isActiveCompactionRequest(requestId, compactionRequestId.current)) return
+      setFeedback({ kind: 'error', message: classifyCompactionFailure(error) })
     } finally {
-      setCompacting(false)
+      if (isActiveCompactionRequest(requestId, compactionRequestId.current)) setCompacting(false)
     }
+  }
+
+  const stopWaiting = () => {
+    compactionRequestId.current += 1
+    setCompacting(false)
+    setFeedback({
+      kind: 'info',
+      message: 'This stops waiting in Desktop; the existing request may continue in Hermes or the model/provider. Its late reply will be ignored, and token costs may still occur. Retry manually if needed.'
+    })
   }
 
   const applyPreview = async () => {
@@ -1655,15 +1684,10 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                 children: `Request sent to Hermes · ${compactionElapsed}s elapsed`
               }),
               jsx('div', {
-                className: 'mt-2 h-1.5 overflow-hidden rounded-full bg-(--chrome-action-hover)',
-                children: jsx('div', {
-                  className: 'h-full w-2/3 animate-pulse rounded-full bg-(--ui-accent) transition-[width] duration-500'
-                })
-              }),
-              jsx('div', {
                 className: 'mt-2 text-xs text-(--ui-text-tertiary)',
-                children: 'Hermes is generating and validating a smaller proposal; if needed, it will automatically retry with progressively stricter wording and a final semantic-limit check.'
-              })
+                children: 'Waiting for the plugin backend response. No progress percentage is available; the backend may automatically retry up to three times within this request. Desktop will not start another request.'
+              }),
+              jsx(ActionButton, { className: 'mt-2', onClick: stopWaiting, children: 'Stop waiting' })
             ]
           })
         : null,
@@ -1718,6 +1742,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                     jsx(ActionButton, { onClick: () => setPreviewView('entries'), 'aria-pressed': previewView === 'entries', children: 'Entries' }),
                     jsx(ActionButton, { onClick: () => setPreviewView('diff'), 'aria-pressed': previewView === 'diff', children: 'Diff' }),
                     jsx(ActionButton, {
+                      disabled: applyingCompaction,
                       onClick: () => { setProposalEditing(!proposalEditing); setPreviewView('entries') },
                       'aria-pressed': proposalEditing,
                       children: proposalEditing ? 'Done editing' : 'Edit proposal'
@@ -1750,21 +1775,22 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                         ? jsxs('div', { className: 'space-y-2', children: [
                             jsx('textarea', {
                               value: entry,
+                              disabled: applyingCompaction,
                               onChange: event => changeProposalEntries(proposalEntries.map((value, position) => position === index ? event.target.value : value)),
                               'aria-label': `Edit proposed entry ${index + 1}`,
                               className: 'h-24 w-full resize-y rounded border border-(--ui-stroke-secondary) bg-transparent p-2 text-sm'
                             }),
                             jsx('div', { className: 'flex flex-wrap gap-2', children: [
-                              jsx(ActionButton, { onClick: () => splitProposalEntry(index), children: 'Split' }),
-                              jsx(ActionButton, { disabled: index === proposalEntries.length - 1, onClick: () => mergeProposalEntry(index), children: 'Merge next' }),
-                              jsx(ActionButton, { onClick: () => changeProposalEntries(proposalEntries.filter((_, position) => position !== index)), children: 'Remove entry' })
+                              jsx(ActionButton, { disabled: applyingCompaction, onClick: () => splitProposalEntry(index), children: 'Split' }),
+                              jsx(ActionButton, { disabled: applyingCompaction || index === proposalEntries.length - 1, onClick: () => mergeProposalEntry(index), children: 'Merge next' }),
+                              jsx(ActionButton, { disabled: applyingCompaction, onClick: () => changeProposalEntries(proposalEntries.filter((_, position) => position !== index)), children: 'Remove entry' })
                             ] })
                           ] })
                         : jsx('div', { 'data-selectable-text': 'true', className: 'whitespace-pre-wrap break-words text-sm select-text', children: entry })
                     ]
                   }, `compact:${index}`)
                 ) }),
-                  proposalEditing ? jsx(ActionButton, { onClick: () => changeProposalEntries([...proposalEntries, '']), children: 'Add entry' }) : null
+                  proposalEditing ? jsx(ActionButton, { disabled: applyingCompaction, onClick: () => changeProposalEntries([...proposalEntries, '']), children: 'Add entry' }) : null
                 ]
               }),
               semanticReport
@@ -1870,6 +1896,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                       children: filtered.map(entry =>
                         jsxs('button', {
                           type: 'button',
+                          disabled: applyingCompaction,
                           onClick: () => selectEntry(entry.content),
                           'aria-current': current?.content === entry.content ? 'true' : undefined,
                           className: `mb-1.5 block w-full rounded-lg border px-3 py-2.5 text-left ${PANEL_TRANSITION} ${
@@ -1911,13 +1938,13 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                         ]
                       }),
                       jsx(ActionButton, {
-                        disabled: saving,
+                        disabled: saving || applyingCompaction,
                         onClick: () => guardNavigation(() => setAdding(false)),
                         children: 'Cancel'
                       }),
                       jsx(ActionButton, {
                         tone: 'primary',
-                        disabled: saving || !draft.trim(),
+                        disabled: saving || applyingCompaction || !draft.trim(),
                         onClick: add,
                         children: saving ? 'Adding…' : 'Add entry'
                       })
@@ -1925,6 +1952,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                   }),
                   jsx('textarea', {
                     value: draft,
+                    disabled: applyingCompaction,
                     onChange: event => {
                       setDraft(event.target.value)
                       setDeleteConfirm(false)
@@ -1968,13 +1996,13 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                       }),
                       jsx(ActionButton, {
                         tone: isDirty ? 'primary' : 'default',
-                        disabled: saving || draftConflict || !isDirty,
+                        disabled: saving || applyingCompaction || draftConflict || !isDirty,
                         onClick: save,
                         children: saving ? 'Saving…' : 'Save changes'
                       }),
                       jsx(ActionButton, {
                         tone: deleteConfirm ? 'danger' : 'default',
-                        disabled: saving || deleting || current.stale,
+                        disabled: saving || deleting || applyingCompaction || current.stale,
                         onClick: () => guardNavigation(remove),
                         children: deleting ? 'Deleting…' : deleteConfirm ? 'Confirm delete' : 'Delete entry'
                       })
@@ -1982,6 +2010,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                   }),
                   jsx('textarea', {
                     value: draft,
+                    disabled: applyingCompaction,
                     onChange: event => {
                       setDraft(event.target.value)
                       setDeleteConfirm(false)
@@ -2111,6 +2140,7 @@ function MagiPage(props) {
   const [bulkConfirm, setBulkConfirm] = useState('')
   const navigationGuard = useRef(null)
   const selectMode = id => {
+    if (mode === 'stored' && navigationGuard.current?.busy) return
     if (mode === 'stored' && navigationGuard.current?.dirty) navigationGuard.current.requestLeave(() => setMode(id))
     else setMode(id)
   }
@@ -2217,7 +2247,11 @@ export default {
       const parsed = await ctx.rest(`/memory/${encodeURIComponent(target)}/compact/preview`, {
         method: 'POST'
       })
-      if (!parsed?.success) throw new Error(parsed?.error || 'AI compaction preview failed.')
+      if (!parsed?.success) {
+        const error = new Error(parsed?.error || 'AI compaction preview failed.')
+        error.kind = 'validation'
+        throw error
+      }
       return parsed
     }
     const applyCompaction = (target, sourceFingerprint, entries) =>
