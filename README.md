@@ -38,6 +38,8 @@ Before approval, Magi validates each pending proposal's structure and checks des
 
 If a pending proposal remains after its memory mutation succeeds, Magi stores a content-free, profile-local marker under `plugins/magi/reconciliation/` and blocks subsequent approvals of that exact proposal. Already-stored pending additions are marked ambiguous even without a marker. Inspect Stored memory before explicitly rejecting such a pending proposal. This is a conservative recovery safeguard: a process crash between the Hermes write and Magi's marker is still possible, and raw modifications by other writers may be indistinguishable from a previous approval. Magi does not guarantee exactly-once execution across these independent stores.
 
+After a bulk or individual decision, expand **Decision results** to inspect each record's ID, final status and safe failure summary. Separate counts show applied, rejected, failed and reconciliation-required records. **Open pending record** navigates to a still-pending item; **Retry rejection** is available only when a previous rejection failed and its proposal still exists. Magi never automatically retries approvals or entries marked `applied_cleanup_failed`. The result panel and confirmation feedback remain when switching between Pending writes and Stored memory.
+
 ## Configuration
 
 Set these options in the Magi plugin settings:

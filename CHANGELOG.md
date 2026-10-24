@@ -2,6 +2,11 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-011: pending bulk decisions now show per-record results in a collapsible,
+  accessible panel with separate applied, rejected, failed and reconciliation
+  counters. Failed records still in the queue can be opened without replaying
+  mutations; only failed rejection attempts offer a manual retry. Result state
+  and confirmation feedback persist when changing the Magi section.
 - MAGI-004: after a native pending approval, Magi records a content-free,
   profile-scoped reconciliation marker before removing the pending file.
   Uncertain cleanup prevents repeat approval across backend reloads; duplicate

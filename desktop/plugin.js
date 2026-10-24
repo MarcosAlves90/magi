@@ -51,6 +51,36 @@ function filterPendingRecords(records, filters = {}) {
   })
 }
 
+function normalizeDecisionResult(report) {
+  const items = (Array.isArray(report?.items) ? report.items : []).map((item, index) => {
+    const status = ['applied', 'rejected', 'failed', 'applied_cleanup_failed'].includes(item?.status)
+      ? item.status : 'failed'
+    const error = status === 'applied_cleanup_failed'
+      ? 'Memory may already be applied; reconcile the pending record before any further action.'
+      : status === 'failed'
+        ? 'This operation failed. Inspect the pending record and its current state.'
+        : ''
+    return { id: String(item?.id || '(unknown)'), status, error, index }
+  })
+  return {
+    action: report?.action === 'reject' ? 'reject' : 'approve',
+    outcome: ['complete', 'partial', 'failed'].includes(report?.outcome) ? report.outcome : 'failed',
+    attempted: Math.max(0, Number(report?.attempted) || 0),
+    applied: Math.max(0, Number(report?.applied) || 0),
+    rejected: Math.max(0, Number(report?.rejected) || 0),
+    failed: Math.max(0, Number(report?.failed) || 0),
+    reconciliation: items.filter(item => item.status === 'applied_cleanup_failed').length,
+    items
+  }
+}
+
+function canRetryDecisionItem(item, report, records) {
+  return report?.action === 'reject' &&
+    item?.status === 'failed' &&
+    Array.isArray(records) &&
+    records.some(record => record.id === item.id)
+}
+
 const CONTROL_TRANSITION = 'transition-all duration-100 ease-out motion-reduce:transition-none'
 const PANEL_TRANSITION = 'transition-[background-color,border-color,opacity] duration-150 ease-out motion-reduce:transition-none'
 const RESIZABLE_ENTRY_VIEWER = 'h-[48vh] min-h-40 max-h-[72vh] flex-none resize-y overflow-auto'
@@ -111,6 +141,69 @@ function ActionButton({ children, tone = 'default', className = '', ...props }) 
     ...props,
     className: `inline-flex items-center justify-center rounded-md border border-(--ui-stroke-secondary) px-2.5 py-1.5 text-xs font-medium ${CONTROL_TRANSITION} ${toneClass} hover:bg-(--chrome-action-hover) active:scale-95 disabled:pointer-events-none disabled:opacity-50 ${className}`,
     children
+  })
+}
+
+function DecisionResults({ report, records, openPendingResult, decide, busy }) {
+  if (!report) return null
+  const result = normalizeDecisionResult(report)
+  return jsxs('section', {
+    className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-3 text-xs',
+    'aria-label': 'Decision results',
+    children: [
+      jsxs('div', {
+        className: 'flex flex-wrap items-center gap-x-4 gap-y-2',
+        children: [
+          jsx('span', {
+            className: 'font-medium',
+            children: result.outcome === 'complete' ? 'Decision completed' : result.outcome === 'partial' ? 'Partial decision' : 'Decision failed'
+          }),
+          jsx('span', { children: `${result.applied} applied` }),
+          jsx('span', { children: `${result.rejected} rejected` }),
+          jsx('span', { children: `${result.failed} failed` }),
+          result.reconciliation
+            ? jsx('span', { className: 'text-(--ui-danger,#f87171)', children: `${result.reconciliation} need reconciliation` })
+            : null
+        ]
+      }),
+      result.items.length
+        ? jsxs('details', {
+            className: 'mt-2',
+            children: [
+              jsx('summary', {
+                className: 'cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+                children: `Review ${result.items.length} individual result(s)`
+              }),
+              jsx('ul', {
+                className: 'mt-2 space-y-2',
+                children: result.items.map((item, index) => {
+                  const exists = records.some(record => record.id === item.id)
+                  return jsxs('li', {
+                    className: 'flex flex-wrap items-center gap-x-3 gap-y-2 border-l-2 border-(--ui-stroke-secondary) pl-3',
+                    children: [
+                      jsx('span', { className: 'font-mono font-medium', children: item.id }),
+                      jsx('span', { className: item.status === 'failed' || item.status === 'applied_cleanup_failed' ? 'text-(--ui-danger,#f87171)' : 'text-(--ui-text-tertiary)', children: item.status }),
+                      item.error ? jsx('span', { className: 'basis-full text-(--ui-text-tertiary)', children: item.error }) : null,
+                      exists ? jsx(ActionButton, {
+                        disabled: busy,
+                        onClick: () => openPendingResult(item.id),
+                        children: 'Open pending record'
+                      }) : null,
+                      canRetryDecisionItem(item, result, records)
+                        ? jsx(ActionButton, {
+                            disabled: busy,
+                            onClick: () => decide('reject', item.id),
+                            children: 'Retry rejection'
+                          })
+                        : null
+                    ]
+                  }, `${item.id}:${index}`)
+                })
+              })
+            ]
+          })
+        : null
+    ]
   })
 }
 
@@ -324,14 +417,15 @@ function OverviewView({ detail }) {
   })
 }
 
-function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpenStoredMemory }) {
+function PendingWritesPage({
+  loadRecords, loadDetail, runDecision, source, onOpenStoredMemory,
+  decisionReport, setDecisionReport, feedback, setFeedback, bulkConfirm, setBulkConfirm
+}) {
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState({ ...EMPTY_PENDING_FILTERS })
   const [selected, setSelected] = useState('')
   const [view, setView] = useState('overview')
   const [busyAction, setBusyAction] = useState('')
-  const [feedback, setFeedback] = useState(null)
-  const [bulkConfirm, setBulkConfirm] = useState('')
 
   const listing = useQuery({
     queryKey: [source, 'records'],
@@ -353,6 +447,12 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
   const clearFilters = () => {
     setSearch('')
     setFilters({ ...EMPTY_PENDING_FILTERS })
+  }
+  const openPendingResult = id => {
+    if (!records.some(record => record.id === id)) return
+    clearFilters()
+    setSelected(id)
+    setView('overview')
   }
   const selectedVisible = filtered.some(record => record.id === selected)
   const currentId = selectedVisible ? selected : filtered[0]?.id || ''
@@ -377,6 +477,8 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
     try {
       const result = await runDecision(action, target)
       const outcome = result?.outcome || (result?.success ? 'complete' : 'failed')
+      const normalized = normalizeDecisionResult({ ...result, action })
+      setDecisionReport(normalized)
       const outcomeFeedback = {
         complete: { kind: 'success' },
         partial: { kind: 'warning' },
@@ -384,16 +486,15 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
       }
       setFeedback({
         ...(outcomeFeedback[outcome] || outcomeFeedback.failed),
-        message: result?.output || `${action} ${outcome}.`
+        message: outcome === 'complete'
+          ? (result?.output || `${action} completed.`)
+          : `${normalized.failed} operation(s) need attention. Review the individual results below.`
       })
       if (outcome === 'complete') setSelected('')
       setBulkConfirm('')
       await listing.refetch()
     } catch (error) {
-      setFeedback({
-        kind: 'error',
-        message: error instanceof Error ? error.message : String(error)
-      })
+      setFeedback({ kind: 'error', message: 'The decision could not be completed. Refresh the queue and inspect the pending record.' })
     } finally {
       setBusyAction('')
     }
@@ -500,6 +601,15 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                 })
               ]
             })
+        : null,
+      decisionReport
+        ? jsx(DecisionResults, {
+            report: decisionReport,
+            records,
+            busy: Boolean(busyAction),
+            openPendingResult,
+            decide
+          })
         : null,
       records.length === 0 && !listing.isLoading
         ? jsx(EmptyState, {
@@ -1420,6 +1530,9 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
 
 function MagiPage(props) {
   const [mode, setMode] = useState('pending')
+  const [decisionReport, setDecisionReport] = useState(null)
+  const [feedback, setFeedback] = useState(null)
+  const [bulkConfirm, setBulkConfirm] = useState('')
   return jsxs('div', {
     className: 'flex h-full min-h-0 flex-col',
     children: [
@@ -1459,7 +1572,13 @@ function MagiPage(props) {
         className: 'min-h-0 flex-1 overflow-hidden',
         children:
           mode === 'pending'
-            ? jsx(PendingWritesPage, { ...props, onOpenStoredMemory: () => setMode('stored') })
+            ? jsx(PendingWritesPage, {
+                ...props,
+                decisionReport, setDecisionReport,
+                feedback, setFeedback,
+                bulkConfirm, setBulkConfirm,
+                onOpenStoredMemory: () => setMode('stored')
+              })
             : jsx(StoredMemoryPage, {
                 loadStoredMemory: props.loadStoredMemory,
                 saveStoredMemory: props.saveStoredMemory,
