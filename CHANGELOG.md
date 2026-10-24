@@ -2,6 +2,11 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-014: introduced isolated Hermes compatibility CI jobs pinned to exact
+  SHAs for the 0.21.5 minimum (`v2026.9.24`, Python 3.13), the existing pinned
+  revision and latest stable `v0.22.5`; the two baseline jobs are required and
+  the latest is informational. Added a disposable-profile native Memory/User
+  transaction probe, local-version evidence, and documented known limits.
 - MAGI-012: added deterministic React DOM interaction tests for the actual
   Desktop module using Hermes' Vitest/React Testing Library patterns and a
   mock SDK/REST context; covers queue decisions, errors, navigation, stored

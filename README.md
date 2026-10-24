@@ -94,3 +94,11 @@ This checks Python syntax, runs tests, enforces the **production line-coverage g
 `verify.sh` invokes pytest **once**, inside `ci/coverage.sh`, and still propagates test and coverage failures. `bash ci/test.sh` remains available for test-only runs. On this macOS workspace, end-to-end `verify.sh` wall-clock time measured **38.66s** on `d9c72a8` (two test passes), **36.73s** after MAGI-013 (two passes), and **17.35s** after MAGI-020 (one pass). The observed final reduction against the original baseline is **21.31s (55.1%)**; individual runs are subject to machine load and warmed dependencies, so this is a measured comparison rather than a guaranteed speedup.
 
 For the MAGI-012 Desktop interaction suite, use Node.js 24 or newer and run `npm ci --ignore-scripts --no-audit --no-fund` once, followed by `bash ci/desktop-test.sh` or `npm run test:desktop`. GitHub CI runs the Desktop interaction suite as a separate step, and `./verify.sh` retains its existing Python/Hermes checks. The Vitest/jsdom tests render the actual `desktop/plugin.js` with a minimal SDK `useQuery` implementation, and route all `ctx.rest` requests to an in-memory fixture. They exercise the current queue search, navigation, approval/rejection and bulk confirmation, network error/retry, stored add/edit/delete, stale compaction rejection, explicit preview/cancel/apply and keyboard Enter navigation. The tests do not use a real Hermes profile, browser, credentials, AI model or network during execution. **Coverage boundary:** pending decision partial-outcome UI, draft preservation on polling, editable compaction proposals and proactive fingerprint invalidation are separate features (MAGI-002/007/006/008); they are not asserted as implemented by this harness. Browser/Electron integrations and visual accessibility still need separate checks.
+
+The [Hermes compatibility matrix](docs/hermes-compatibility-matrix.md) uses
+three exact source commits in independent CI jobs: the `0.21.5` release
+(`v2026.9.24` tag, Python 3.13), the prior pinned commit (Python 3.14), and
+the latest stable release selected on 2026-10-23 (`v0.22.5`, Python 3.14).
+The first two are required gates; latest stable is initially informational.
+It checks native, temporary-profile `MemoryStore` transactions on both targets,
+the existing Python/Hermes validation and the deterministic Desktop suite.

@@ -147,7 +147,7 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     mount()
     fireEvent.click(btn('Stored memory Durable context'))
     const editor = await screen.findByRole('textbox', { name: 'Edit memory memory entry' })
-    expect(btn('Save changes').disabled).toBe(true)
+    await waitFor(() => expect(btn('Save changes').disabled).toBe(true))
     fireEvent.change(editor, { target: { value: 'One durable fact updated' } })
     expect(btn('Save changes').disabled).toBe(false)
     fireEvent.click(btn('Save changes'))
