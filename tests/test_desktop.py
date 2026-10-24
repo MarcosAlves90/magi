@@ -800,6 +800,77 @@ def test_backend_marks_batch_obsolete_when_any_pinned_target_is_missing(monkeypa
     assert status["destructive_count"] == 2
 
 
+def test_backend_blocks_unverifiable_pending_approvals(monkeypatch, tmp_path):
+    stage(tmp_path, "valid", {"action": "add", "target": "memory", "content": "new"}, created=1)
+    stage(tmp_path, "malformed", {"action": "batch", "target": "memory", "operations": []}, created=2)
+    stage(tmp_path, "no-pin", {"action": "remove", "target": "memory", "old_text": "old"}, created=3)
+    stage(tmp_path, "missing", {"action": "remove", "target": "memory", "old_text": "absent", "matched_entry": "absent"}, created=4)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(memory=["old"]))
+    native_calls = []
+
+    def approve(payload, store):
+        native_calls.append(payload)
+        return {"success": True}
+
+    monkeypatch.setattr(api, "_apply_pending_memory", approve)
+    client = client_for(api)
+    listing = client.get("/records").json()["records"]
+    blocked = {row["id"]: row["target_status"] for row in listing if row["id"] != "valid"}
+    assert all(not state["can_apply"] for state in blocked.values())
+    assert blocked["malformed"]["state"] == "unverifiable"
+
+    result = client.post("/records/all/decision", json={"action": "approve"}).json()
+    assert result["outcome"] == "partial"
+    assert (result["attempted"], result["applied"], result["failed"]) == (4, 1, 3)
+    assert [payload["content"] for payload in native_calls] == ["new"]
+    assert {item["id"]: item["status"] for item in result["items"] if item["status"] == "failed"} == {
+        "malformed": "failed", "no-pin": "failed", "missing": "failed",
+    }
+
+    rejected = client.post("/records/malformed/decision", json={"action": "reject"}).json()
+    assert rejected["outcome"] == "complete"
+    assert rejected["rejected"] == 1
+
+
+def test_backend_status_fail_closed_when_memory_store_unavailable(monkeypatch, tmp_path):
+    stage(tmp_path, "unavailable", {"action": "add", "target": "user", "content": "new"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+
+    def fail_store():
+        raise RuntimeError("private storage path")
+
+    monkeypatch.setattr(api, "_memory_store", fail_store)
+    client = client_for(api)
+    status = client.get("/records").json()["records"][0]["target_status"]
+    assert status["state"] == "unknown"
+    assert status["can_apply"] is False
+    assert "unavailable" in status["message"].lower()
+    result = client.post("/records/unavailable/decision", json={"action": "approve"}).json()
+    assert result["outcome"] == "failed"
+    assert result["failed"] == 1
+    assert (tmp_path / "pending/memory/unavailable.json").exists()
+    assert client.post("/records/unavailable/decision", json={"action": "reject"}).json()["rejected"] == 1
+
+
+def test_backend_native_conflict_after_precheck_is_reported(monkeypatch, tmp_path):
+    stage(tmp_path, "race", {"action": "remove", "target": "memory", "old_text": "old", "matched_entry": "old"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(memory=["old"]))
+    monkeypatch.setattr(
+        api, "_apply_pending_memory",
+        lambda *args: {"success": False, "error": "native pinned entry is stale"},
+    )
+    result = client_for(api).post("/records/race/decision", json={"action": "approve"}).json()
+    assert result["outcome"] == "failed"
+    assert result["items"][0]["status"] == "failed"
+    assert "stale" in result["items"][0]["error"]
+    assert (tmp_path / "pending/memory/race.json").exists()
+
+
 class FakeCompactionLlm:
     def __init__(self, entries=None):
         self.entries = list(entries or ["first fact; second fact"])

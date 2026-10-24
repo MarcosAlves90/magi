@@ -287,19 +287,16 @@ function OverviewView({ detail }) {
             children: [
               jsx('h2', { className: 'mr-auto text-sm font-semibold', children: record.summary || 'Pending memory change' }),
               jsx(Badge, {
-                tone: status.state === 'missing' || status.state === 'unverifiable' ? 'danger' : 'accent',
-                children: status.state === 'missing' ? 'obsolete' : status.state === 'unverifiable' ? 'unverifiable' : 'ready'
+                tone: status.can_apply === false ? 'danger' : 'accent',
+                children: status.state === 'missing' ? 'obsolete' : status.can_apply === false ? 'unverifiable' : 'ready'
               })
             ]
           }),
           jsx('p', {
             className: 'mt-2 text-xs leading-relaxed text-(--ui-text-tertiary)',
-            children:
-              status.state === 'missing'
-                ? 'The original target no longer exists. This proposal cannot be applied safely.'
-                : status.state === 'unverifiable'
-                  ? 'This legacy destructive proposal has no pinned target and cannot be verified safely.'
-                  : 'Review the proposed change below, then approve or reject it from the action bar.'
+            children: status.can_apply === false
+              ? (status.message || 'This proposal cannot be verified safely.')
+              : 'Review the proposed change below, then approve or reject it from the action bar.'
           })
         ]
       }),
@@ -473,7 +470,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                 }),
                 jsx(ActionButton, {
                   tone: bulkConfirm === 'reject' ? 'danger' : 'primary',
-                  disabled: Boolean(busyAction) || (bulkConfirm === 'approve' && blockedApprovalCount > 0),
+                  disabled: Boolean(busyAction),
                   onClick: () => decide(bulkConfirm, 'all'),
                   children: busyAction ? 'Working…' : `Confirm ${bulkConfirm} all`
                 }),
@@ -490,8 +487,8 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                 jsx('span', { className: 'mr-auto text-xs text-(--ui-text-tertiary)', children: 'Bulk actions affect the whole queue, including proposals hidden by filters.' }),
                 jsx(ActionButton, {
                   tone: 'primary',
-                  disabled: Boolean(busyAction) || blockedApprovalCount > 0,
-                  title: blockedApprovalCount ? 'Resolve obsolete or unverifiable proposals before approving all.' : undefined,
+                  disabled: Boolean(busyAction),
+                  title: blockedApprovalCount ? 'Valid proposals will be attempted; blocked proposals will be reported individually.' : undefined,
                   onClick: () => setBulkConfirm('approve'),
                   children: 'Approve all'
                 }),
@@ -606,8 +603,8 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                                 jsx('span', { children: formatCreated(record.created_at) }),
                                 record.target_status?.state === 'missing'
                                   ? jsx('span', { className: 'font-medium text-(--ui-danger,#f87171)', children: 'target missing · obsolete proposal' })
-                                  : record.target_status?.state === 'unverifiable'
-                                    ? jsx('span', { className: 'font-medium text-(--ui-danger,#f87171)', children: 'unverifiable legacy proposal' })
+                                  : record.target_status?.can_apply === false
+                                    ? jsx('span', { className: 'font-medium text-(--ui-danger,#f87171)', children: 'approval unavailable' })
                                     : jsx('span', { children: 'ready to review' })
                               ]
                             })
@@ -706,7 +703,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
                       detail.data.record.target_status.message ||
                       'Target entry no longer exists. Reject this obsolete proposal to delete it.'
                   })
-                : detail.data?.record?.target_status?.state === 'unverifiable'
+                : detail.data?.record?.target_status?.can_apply === false
                   ? jsx('div', {
                       className: 'border-b border-(--ui-stroke-secondary) px-4 py-2 text-xs text-(--ui-danger,#f87171)',
                       children: detail.data.record.target_status.message

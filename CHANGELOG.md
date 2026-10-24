@@ -2,6 +2,11 @@
 
 ## 1.7.8 — 2026-10-17
 
+- MAGI-003: pending proposals that are malformed, missing destructive
+  `matched_entry` pins or otherwise unverifiable are rejected before native
+  approval. Memory-store read errors disable approval; bulk operations still
+  attempt other valid records and return per-record results. Rejection remains
+  available; final concurrency conflicts continue to be decided by Hermes.
 - MAGI-002: pending approve/reject now reports complete, partial or failed
   outcomes with per-record statuses and counts. Successful memory mutations
   followed by pending-file cleanup failure are distinguished from completed

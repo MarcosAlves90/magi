@@ -34,6 +34,8 @@ Pending-write decisions and compaction previews work without an open chat sessio
 
 Decision responses report `outcome: complete | partial | failed`, counts (`attempted`, `applied`, `rejected`, `failed`) and per-record `items[]` with status and errors. A partial batch can return HTTP 200 because the request completed at the transport layer; `success` is true only when every selected decision and its pending-file cleanup completed. If a memory write was applied but the proposal file could not be removed, its status is `applied_cleanup_failed`: inspect and reconcile it before considering any retry. The legacy `output` text is retained.
 
+Before approval, Magi validates each pending proposal's structure and checks destructive `matched_entry` pins against the currently readable target. Malformed, missing and unverifiable proposals cannot be approved, but may be rejected. **Approve all** attempts individually eligible records and reports blocked records in the partial result. Checks in Magi are preconditions before the native Hermes operation, not an atomic snapshot guarantee; concurrent changes can still cause a native rejection.
+
 ## Configuration
 
 Set these options in the Magi plugin settings:

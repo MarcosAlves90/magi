@@ -248,7 +248,11 @@ def _record_target_status(record: Any, store: Any) -> Dict[str, Any]:
     payload = record.payload
     target = payload.get("target")
     if target not in {"memory", "user"}:
-        return {"state": "unknown", "can_apply": True, "missing_count": 0, "destructive_count": 0}
+        return {
+            "state": "unknown", "can_apply": False,
+            "missing_count": 0, "destructive_count": 0,
+            "message": "Proposal target cannot be verified; reject and recreate it.",
+        }
 
     entries = store.memory_entries if target == "memory" else store.user_entries
     operations = payload.get("operations") if payload.get("action") == "batch" else [payload]
@@ -318,13 +322,26 @@ def _target_status_for_records(records: List[Any]) -> Dict[str, Dict[str, Any]]:
         return {
             record.id: {
                 "state": "unknown",
-                "can_apply": True,
+                "can_apply": False,
                 "missing_count": 0,
                 "destructive_count": 0,
+                "message": "Stored memory is unavailable for verification. Approval is disabled; rejection remains possible.",
             }
             for record in records
         }
-    return {record.id: _record_target_status(record, store) for record in records}
+    review = _review()
+    statuses = {}
+    for record in records:
+        errors, _warnings = review.validate_record(record)
+        if errors:
+            statuses[record.id] = {
+                "state": "unverifiable", "can_apply": False,
+                "missing_count": 0, "destructive_count": 0,
+                "message": "Pending proposal has invalid structure; reject and recreate it.",
+            }
+        else:
+            statuses[record.id] = _record_target_status(record, store)
+    return statuses
 
 
 @router.get("/records")
@@ -390,7 +407,12 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
     errors = []
     overwritten = []
     removed = []
-    store = _memory_store() if action == "approve" else None
+    store = None
+    if action == "approve":
+        try:
+            store = _memory_store()
+        except Exception:
+            pass
     for record in records:
         if action == "reject":
             try:
@@ -403,6 +425,20 @@ def decide_pending_record(selector: str, body: PendingDecisionRequest) -> Dict[s
                 failed += 1
                 errors.append(f"{record.id}: {error}")
                 items.append({"id": record.id, "status": "failed", "error": error})
+            continue
+
+        validation_errors, _warnings = review.validate_record(record)
+        if validation_errors:
+            error = "Pending proposal has invalid structure; reject and recreate it."
+        elif store is None:
+            error = "Stored memory is unavailable for approval verification."
+        else:
+            status = _record_target_status(record, store)
+            error = status.get("message") or "Pending proposal cannot be verified." if not status["can_apply"] else None
+        if error:
+            failed += 1
+            errors.append(f"{record.id}: {error}")
+            items.append({"id": record.id, "status": "failed", "error": error})
             continue
 
         delimiter_error = _pending_delimiter_error(record.payload)
