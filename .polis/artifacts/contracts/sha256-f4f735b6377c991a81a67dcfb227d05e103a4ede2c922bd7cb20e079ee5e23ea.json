@@ -1,0 +1,193 @@
+{
+  "schema_version": 6,
+  "kind": "behavior_preserving",
+  "scope": {
+    "allowed_paths": [
+      "CHANGELOG.md",
+      "README.md",
+      "plugin.yaml",
+      "package.json",
+      "package-lock.json",
+      "docs/hermes-compatibility-matrix.md",
+      "docs/hermes-memory-compatibility.md",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Prepare the Magi 1.8.1 patch-version metadata and release notes for the reviewed profile-local Agent/Dashboard IPC bridge and accumulated unreleased Desktop redesign, without changing runtime behavior.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "All authoritative plugin, npm test-package, README, and current compatibility-document version fields consistently report 1.8.1."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "The 1.8.1 changelog section dated 2026-10-26 includes the accumulated Desktop redesign and the profile-local AI IPC bridge; prior 1.8.0 and older release notes remain intact."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Version metadata changes do not modify runtime behavior; the existing CI suite remains green and its release metadata test verifies the version sources and changelog."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Manifest, package.json, package-lock root entries, README and both current compatibility-document titles all agree on 1.8.1.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "The dated 1.8.1 changelog preserves the Unreleased Desktop redesign and documents the IPC bridge while retaining historical sections.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "The full repository CI suite passes against the version-bumped tree with no runtime code changes.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No runtime/plugin logic, dependencies, Hermes configuration, credentials, or memory data are changed."
+      },
+      {
+        "id": "INV-2",
+        "statement": "No release tag or GitHub release is created; only source metadata and notes are prepared."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Version sources disagree or historical changelog sections are lost."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "The metadata update changes runtime behavior, dependencies, Hermes configuration, or creates a release tag."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "User requests a version bump, commit, and push after independent review approval of the IPC implementation."
+      },
+      {
+        "id": "IN-2",
+        "statement": "The latest published source tag is v1.8.0; four source commits and an Unreleased Desktop redesign currently follow it."
+      },
+      {
+        "id": "IN-3",
+        "statement": "The IPC bridge implementation was independently reviewed and validated before this metadata-only change."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Consistent Magi 1.8.1 source version metadata and dated release notes, validated without changing runtime behavior."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If version consistency or full CI validation fails, do not commit or publish the metadata change."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "de62e6ef94a34b896a849d5e84e577af230f7163",
+    "base_tree": "fe62cf43eb5fee4655fcb873a5610ad2d65eb42c",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "206d095aeb5dfd35e50c1fac28b2be5123deaceb38fa74ddf80785f9c7cabb57"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "green_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "bash ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    }
+  }
+}

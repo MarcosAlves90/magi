@@ -2,7 +2,10 @@
 
 ## Unreleased
 
+## 1.8.1 — 2026-10-26
+
 - Redesigned the Desktop workspace with a full-width memory list/editor, always-visible usage estimates and common actions, responsive review panes, inline history filters, and explicit accessible confirmations. Existing memory, transfer, AI, pending-write, and audit safeguards remain intact.
+- Restored Review memory with AI and Compact with AI across Dashboard/Agent processes through a profile-local Unix socket to the active Agent's `ctx.llm`. The bridge bounds and validates structured requests, stops accepting work on unload, and drains in-flight calls before releasing context; Hermes configuration remains unchanged.
 
 ## 1.8.0 — 2026-10-23
 
