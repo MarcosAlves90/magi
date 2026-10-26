@@ -1,0 +1,258 @@
+diff --git a/tests/test_runtime_ipc.py b/tests/test_runtime_ipc.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6d87067fe6e9d9ba6e22d6d5a0d23f9e69d1651
+--- /dev/null
++++ b/tests/test_runtime_ipc.py
+@@ -0,0 +1,252 @@
++"""Profile-local IPC regression and hardening tests."""
++
++import importlib.util
++import json
++import os
++import socket
++import stat
++import subprocess
++import sys
++import threading
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++class FakeLlm:
++    def __init__(self, *, error=None):
++        self.calls = []
++        self.error = error
++
++    def complete_structured(self, **kwargs):
++        self.calls.append(kwargs)
++        if self.error:
++            raise RuntimeError(self.error)
++        return SimpleNamespace(
++            parsed={"suggestions": []},
++            text='{"suggestions": []}',
++            provider="test-provider",
++            model="test-model",
++        )
++
++
++def _load_runtime_ipc():
++    path = ROOT / "runtime_ipc.py"
++    if not path.is_file():
++        pytest.skip("profile IPC implementation is not present on the baseline")
++    spec = importlib.util.spec_from_file_location("magi_runtime_ipc_under_test", path)
++    assert spec is not None and spec.loader is not None
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def _reject_request(module, payload):
++    server_side, client_side = socket.socketpair()
++    errors = []
++
++    def send_request():
++        try:
++            client_side.sendall(json.dumps(payload).encode("utf-8"))
++            client_side.shutdown(socket.SHUT_WR)
++        except OSError as exc:
++            errors.append(exc)
++
++    sender = threading.Thread(target=send_request)
++    sender.start()
++    try:
++        with pytest.raises(ValueError):
++            module._read_request(server_side)
++    finally:
++        sender.join(timeout=2)
++        server_side.close()
++        client_side.close()
++    assert not sender.is_alive()
++    assert not errors
++
++
++def test_dashboard_llm_uses_profile_socket_across_processes_and_unload_removes_it(tmp_path, monkeypatch):
++    profile = (tmp_path / "active-profile").resolve()
++    profile.mkdir()
++    monkeypatch.setenv("HERMES_HOME", str(profile))
++
++    spec = importlib.util.spec_from_file_location(
++        "hermes_plugin_magi_ipc_test", ROOT / "__init__.py", submodule_search_locations=[str(ROOT)],
++    )
++    assert spec is not None and spec.loader is not None
++    plugin = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = plugin
++    spec.loader.exec_module(plugin)
++    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda override="": profile)
++    llm = FakeLlm()
++    unload_callbacks = []
++    ctx = SimpleNamespace(
++        llm=llm,
++        on_unload=unload_callbacks.append,
++        register_command=lambda *args, **kwargs: None,
++        register_cli_command=lambda *args, **kwargs: None,
++    )
++    plugin.register(ctx)
++
++    child = r'''
++import importlib.util, os
++from pathlib import Path
++root = Path(os.environ["MAGI_PLUGIN_ROOT"])
++spec = importlib.util.spec_from_file_location("magi_dashboard_child", root / "dashboard" / "plugin_api.py")
++api = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(api)
++api.resolve_hermes_home = lambda *args, **kwargs: Path(os.environ["HERMES_HOME"])
++result = api._plugin_llm().complete_structured(
++    instructions="Analyze this synthetic test entry.",
++    input=[{"type": "text", "text": "synthetic test entry"}],
++    json_schema={"type": "object"},
++    purpose="memory organization analysis",
++)
++assert result.parsed == {"suggestions": []}
++assert result.text == '{"suggestions": []}'
++assert result.provider == "test-provider"
++assert result.model == "test-model"
++print("IPC_RESULT_OK")
++'''
++    env = {
++        key: os.environ[key]
++        for key in ("PATH", "HOME", "TMPDIR", "TMP", "TEMP", "SystemRoot", "COMSPEC", "PATHEXT", "USERPROFILE", "LOCALAPPDATA")
++        if key in os.environ
++    }
++    env.update({"HERMES_HOME": str(profile), "MAGI_PLUGIN_ROOT": str(ROOT)})
++    try:
++        result = subprocess.run(
++            [sys.executable, "-c", child], cwd=ROOT, env=env, text=True,
++            capture_output=True, timeout=15, check=False,
++        )
++        assert result.returncode == 0, result.stderr
++        assert "IPC_RESULT_OK" in result.stdout
++        assert len(llm.calls) == 1
++        assert "synthetic test entry" in str(llm.calls[0]["input"])
++        socket_path = profile / "plugin-data" / "magi" / "llm.sock"
++        assert socket_path.is_socket()
++        assert stat.S_IMODE(socket_path.stat().st_mode) == 0o600
++        assert stat.S_IMODE(socket_path.parent.stat().st_mode) == 0o700
++    finally:
++        for callback in unload_callbacks:
++            callback()
++        for name in tuple(sys.modules):
++            if name == spec.name or name.startswith(spec.name + "."):
++                sys.modules.pop(name, None)
++    assert not socket_path.exists()
++
++
++def test_duplicate_server_stop_preserves_live_owner(tmp_path):
++    module = _load_runtime_ipc()
++    profile = tmp_path / "profile"
++    profile.mkdir()
++    llm = FakeLlm()
++    owner = module.ProfileLlmServer(profile, llm).start()
++    duplicate = module.ProfileLlmServer(profile, llm).start()
++    client = module.ProfileLlmClient(profile)
++    try:
++        assert client.is_available
++        duplicate.stop()
++        assert client.is_available
++        result = client.complete_structured(
++            instructions="test", input=[{"type": "text", "text": "synthetic"}],
++            json_schema={"type": "object"}, purpose="test",
++        )
++        assert result.parsed == {"suggestions": []}
++        assert len(llm.calls) == 1
++    finally:
++        duplicate.stop()
++        owner.stop()
++    assert not client.is_available
++
++
++def test_long_home_rejects_untrusted_tmpdir_and_recovers_stale_socket(tmp_path, monkeypatch):
++    module = _load_runtime_ipc()
++    monkeypatch.setenv("TMPDIR", str(tmp_path))
++    profile = tmp_path / ("profile-" + "x" * 96)
++    profile.mkdir()
++    assert module.profile_socket_path(profile).name == module._LONG_HOME_SOCKET_NAME
++
++    socket_path = module.profile_socket_path(profile)
++    runtime_root = socket_path.parents[1]
++    module._ensure_private_runtime_root(runtime_root)
++    socket_path.parent.symlink_to(profile, target_is_directory=True)
++    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
++    stale.bind(str(socket_path))
++    stale.close()
++
++    llm = FakeLlm()
++    server = module.ProfileLlmServer(profile, llm).start()
++    client = module.ProfileLlmClient(profile)
++    try:
++        assert client.is_available
++        assert stat.S_IMODE(runtime_root.stat().st_mode) == 0o700
++        assert socket_path.is_socket()
++        assert (profile / "plugin-data" / "magi" / "llm.sock").is_symlink()
++
++        unsafe = tmp_path / "world-readable-tmp"
++        unsafe.mkdir(mode=0o755)
++        os.chmod(unsafe, 0o755)
++        with pytest.raises(RuntimeError, match="not trusted"):
++            module._ensure_private_runtime_root(unsafe / "magi-ipc")
++    finally:
++        server.stop()
++    assert not client.is_available
++    assert not (profile / module._LONG_HOME_SOCKET_NAME).exists()
++    assert not (profile / "plugin-data" / "magi" / "llm.sock").exists()
++
++
++def test_structured_request_validation_bounds_nested_schema_and_rejects_unknown_method():
++    module = _load_runtime_ipc()
++    valid = {
++        "version": 1,
++        "method": "complete_structured",
++        "kwargs": {
++            "instructions": "test",
++            "input": [{"type": "text", "text": "synthetic"}],
++            "json_schema": {"type": "object"},
++            "purpose": "test",
++        },
++    }
++    bad_method = json.loads(json.dumps(valid))
++    bad_method["method"] = "complete"
++    _reject_request(module, bad_method)
++
++    bad_item = json.loads(json.dumps(valid))
++    bad_item["kwargs"]["input"][0]["unexpected"] = "x"
++    _reject_request(module, bad_item)
++
++    deep_schema = json.loads(json.dumps(valid))
++    nested = "leaf"
++    for _ in range(module._MAX_SCHEMA_DEPTH + 1):
++        nested = {"nested": nested}
++    deep_schema["kwargs"]["json_schema"] = nested
++    _reject_request(module, deep_schema)
++
++    oversized_schema = json.loads(json.dumps(valid))
++    oversized_schema["kwargs"]["json_schema"] = {"type": "object", "description": "x" * 300_000}
++    _reject_request(module, oversized_schema)
++
++
++def test_invalid_response_shape_and_provider_exception_are_redacted(tmp_path):
++    module = _load_runtime_ipc()
++    with pytest.raises(ValueError):
++        module._result_payload(SimpleNamespace(parsed=["not-an-object"], text="", provider="", model=""))
++
++    profile = tmp_path / "profile"
++    profile.mkdir()
++    server = module.ProfileLlmServer(profile, FakeLlm(error="SECRET_PROVIDER_DETAIL")).start()
++    client = module.ProfileLlmClient(profile)
++    try:
++        with pytest.raises(RuntimeError) as error:
++            client.complete_structured(
++                instructions="test", input=[{"type": "text", "text": "synthetic"}],
++                json_schema={"type": "object"}, purpose="test",
++            )
++        assert "SECRET_PROVIDER_DETAIL" not in str(error.value)
++    finally:
++        server.stop()

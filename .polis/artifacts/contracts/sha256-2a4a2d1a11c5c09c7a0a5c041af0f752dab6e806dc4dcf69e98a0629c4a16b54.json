@@ -1,0 +1,365 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "scope": {
+    "allowed_paths": [
+      "__init__.py",
+      "dashboard/plugin_api.py",
+      "runtime_ipc.py",
+      "README.md",
+      "tests/test_runtime_ipc.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_runtime_ipc.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Make profile-local IPC readiness explicit and ensure both unload and failed-start cleanup drain in-flight LLM handlers before releasing context; preserve plugin-only scope, private paths, and protocol validation. Lock-file opens must not block on a substituted special file.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "When no same-process Agent context is available, the Dashboard AI client connects to a Magi-owned Unix-domain socket scoped to the active Hermes profile and invokes only complete_structured through the Agent's existing ctx.llm."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "The profile-root OS lock is acquired before any IPC directory creation/chmod, alias, or socket mutation and held across complete start/stop; unload and failed-start cleanup stop accepting work and drain in-flight ctx.llm calls without a fixed deadline before releasing the context."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Fallback TMPDIR path components are inspected before canonicalization; user-owned symlink components and unsafe/foreign-owned directories are rejected, trusted root-owned system symlinks are accepted only when their resolved target chain is safe; checked private runtime/profile directories constrain alias and lock operations; the profile-root lock is a private regular single-link file."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "The protocol accepts only bounded structured-completion inputs, recursively bounds schema depth/nodes/bytes, validates response shapes, rejects unsupported methods, and never logs prompts, memory content, credentials, or raw provider errors."
+      },
+      {
+        "id": "REQ-5",
+        "statement": "The bridge remains local and profile-path scoped; same-OS-user local processes are explicitly documented as within the trust boundary because Hermes profiles are not OS isolation boundaries."
+      },
+      {
+        "id": "REQ-6",
+        "statement": "Existing same-process behavior, explicit AI consent, memory safeguards, and Hermes configuration remain unchanged; only Magi plugin code, its README, and IPC regression tests change."
+      },
+      {
+        "id": "REQ-7",
+        "statement": "A duplicate startup adopts an existing listener only after a bounded fixed protocol probe confirms it is a compatible Magi IPC endpoint; the probe invokes no LLM operation and unknown methods remain rejected."
+      },
+      {
+        "id": "REQ-8",
+        "statement": "Regression fixtures use unique private short temporary roots and controlled listeners so Unix socket path length or setup races cannot mask the behavior under test."
+      },
+      {
+        "id": "REQ-10",
+        "statement": "The listener-ready signal is set immediately when the serving thread enters serve_forever, independent of service_actions polling; failed startup shuts down and joins the serving thread before closing the listener and draining handler threads."
+      },
+      {
+        "id": "REQ-11",
+        "statement": "The profile-root lock is opened with nonblocking semantics before descriptor validation, so a FIFO or other substituted special file cannot stall startup or unload; non-regular descriptors are rejected."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "A Dashboard API subprocess uses the profile-local bridge to call fake Agent ctx.llm and receives parsed/text/provider/model output; on the clean baseline, the integration test fails with the existing unavailable-context message.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "A fresh long-profile path creates its own hashed alias without pre-created directories; unsafe TMPDIR ancestry and user-owned TMPDIR symlinks are rejected; trusted macOS system symlinks resolve to safe targets; socket permissions are verified.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Concurrent and duplicate starts serialize to exactly one live owner; a non-owner stop preserves the listener; owner unload removes the endpoint; unload remains pending until an in-flight structured LLM request finishes.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Unknown methods, malformed/nested/oversized schemas, invalid request/response shapes, and provider exceptions fail safely; raw provider details do not reach the client or logs.",
+        "requirements": [
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-5",
+        "statement": "Existing explicit AI route tests, repository verification, documentation, and unchanged Hermes source/configuration pass the required checks.",
+        "requirements": [
+          "REQ-5",
+          "REQ-6"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-6",
+        "statement": "Concurrent starts serialize before directory setup; normal unload and failed-start cleanup remain blocked past client timeout while ctx.llm executes, then finish after it returns; documentation states both drains may wait indefinitely.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-7",
+        "statement": "A hard-linked profile-root lock is rejected before plugin-data directories are created; an active socket is adopted only after a valid bounded Magi probe; incompatible listeners are neither adopted nor removed.",
+        "requirements": [
+          "REQ-3",
+          "REQ-7"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-8",
+        "statement": "Host-side socket paths in regression fixtures stay within AF_UNIX limits, and an actively accepting incompatible endpoint is deterministically distinguished from a Magi listener.",
+        "requirements": [
+          "REQ-7",
+          "REQ-8"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-9",
+        "statement": "The profile-root lock is held through startup and cleanup, including directory setup, stale inode recovery, endpoint binding, and unload.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-10",
+        "statement": "Readiness is signaled independently of service_actions; a deterministic failed-start test proves listener cleanup waits for an in-flight provider call and leaves no socket or serving thread.",
+        "requirements": [
+          "REQ-2",
+          "REQ-10"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-11",
+        "statement": "A regression test verifies the lock-file open includes O_NONBLOCK, and an invalid non-regular lock file is rejected before lifecycle setup.",
+        "requirements": [
+          "REQ-3",
+          "REQ-11"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No Hermes source, Hermes configuration, profile isolation setting, credentials, or memory data is modified by bridge setup or tests."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Memory is sent through ctx.llm only when the user explicitly invokes an existing AI action; the IPC bridge never applies an AI proposal to memory."
+      },
+      {
+        "id": "INV-3",
+        "statement": "The endpoint uses Unix-domain sockets only, the active profile path, restrictive filesystem permissions, inode-aware locking/cleanup, and listener-owner-aware lifecycle."
+      },
+      {
+        "id": "INV-4",
+        "statement": "No prompt, memory content, credential, or provider exception detail is written to logs or returned as a transport error."
+      },
+      {
+        "id": "INV-5",
+        "statement": "Processes running under the same OS user are trusted; the bridge does not claim to isolate mutually untrusted same-user processes or Hermes profiles."
+      },
+      {
+        "id": "INV-6",
+        "statement": "After plugin unload completes, no IPC request handler is executing against ctx.llm; unload has no fixed deadline and may remain pending until a provider returns."
+      },
+      {
+        "id": "INV-7",
+        "statement": "A client adopts only a protocol-compatible Magi listener; the health probe is bounded, fixed-response, and never invokes ctx.llm."
+      },
+      {
+        "id": "INV-8",
+        "statement": "A failed listener startup cannot leave a serving thread or socket behind, and cleanup does not release ctx.llm while a handler still uses it."
+      },
+      {
+        "id": "INV-9",
+        "statement": "Opening the profile-root lock cannot block on a FIFO or other special file before fstat validation."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "AI calls fail solely because Dashboard and Agent do not share a Python process or module registry."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "The IPC endpoint is network-exposed, shared across profile paths, removed by a non-owner, left active after owner unload, or accepts arbitrary LLM methods."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "Untrusted/symlinked fallback directories, malformed/oversized nested values, hard-linked lock files, raw provider exceptions, Hermes source/configuration, or memory stores are exposed or modified."
+      },
+      {
+        "id": "FORBID-4",
+        "statement": "Concurrent start/stop races unlink another live listener, unload releases ctx.llm during an active handler, or an incompatible socket is adopted as Magi."
+      },
+      {
+        "id": "FORBID-5",
+        "statement": "Unload is described as time-bounded when no provider-call cancellation guarantee exists, or the health probe invokes an LLM operation."
+      },
+      {
+        "id": "FORBID-6",
+        "statement": "A startup failure bypasses the in-flight drain, or listener readiness depends on a polling callback that may not execute before timeout."
+      },
+      {
+        "id": "FORBID-7",
+        "statement": "Startup or unload can block while opening a non-regular profile-root lock entry."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "User reports that /magi stats succeeds while Review memory with AI and Compact with AI continue to fail; user authorized a local profile-restricted bridge in the Magi plugin that stops on unload."
+      },
+      {
+        "id": "IN-2",
+        "statement": "Existing runtime_bridge.py stores ctx only in process memory; dashboard/plugin_api.py raises when its process has no matching Agent context."
+      },
+      {
+        "id": "IN-3",
+        "statement": "Independent review identified untrusted long-path TMPDIR handling, listener ownership/cleanup, stale socket races, insufficient nested bounds, and absent response-shape checks."
+      },
+      {
+        "id": "IN-4",
+        "statement": "Final independent review requires explicit concurrent-start and blocked-handler unload coverage."
+      },
+      {
+        "id": "IN-5",
+        "statement": "Independent review found TMPDIR symlink canonicalization, hard-link/lock path integrity, ambiguous indefinite unload, and missing protocol identity verification; fresh long-profile startup was independently reproduced as working without a pre-created hash alias."
+      },
+      {
+        "id": "IN-6",
+        "statement": "The initial v4 regression fixtures used long pytest temp paths and an uncoordinated listener; they were corrected to use short private roots and a controlled response, with expected failures reproduced on the v3 implementation."
+      },
+      {
+        "id": "IN-7",
+        "statement": "Independent review identified that the prior endpoint lock was acquired after directory setup; the lock is moved to the existing profile root and now protects the entire lifecycle, with a hardlink regression test."
+      },
+      {
+        "id": "IN-8",
+        "statement": "Independent review found failed-start close/join ordering and service_actions-based readiness; the revised contract requires explicit thread-entry readiness and drain-before-release on failed startup."
+      },
+      {
+        "id": "IN-9",
+        "statement": "Independent v6 review identified possible blocking when opening a FIFO lock entry before fstat validation; a bounded host probe rejected the FIFO, and the contract adds explicit nonblocking-open coverage."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "A tested profile-local IPC bridge between Dashboard API and Agent ctx.llm, secured for the documented same-user trust boundary, lifecycle-bound to the owning plugin registration/unload, with concise privacy documentation."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If the profile socket is unavailable, untrusted, malformed, or oversized, the request fails safely without credential access, memory mutation, or prompt/provider detail disclosure; existing Agent commands remain usable."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "b77e8a051c1c2dae439f46505349105898c56fe1",
+    "base_tree": "4a0eefa5a74fab5a06108e0051ed059c09e088e5",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "5b4c05a4c90d49ff5c9bcf8f7d017a08e87d00ebdfe1e4a51d61dba7a6c0f709"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_runtime_ipc.py --rootdir=tests"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 600,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_runtime_ipc.py --rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "Magi Agent context is unavailable"
+    ]
+  }
+}

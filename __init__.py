@@ -21,6 +21,7 @@ from .core import (
     tokenize,
 )
 from .runtime_bridge import bind_plugin_context, clear_plugin_context
+from .runtime_ipc import ProfileLlmServer
 
 
 _MEMORY_CHARS_PER_TOKEN = MEMORY_CHARS_PER_TOKEN
@@ -123,7 +124,17 @@ def register(ctx) -> None:
     bind_plugin_context(ctx)
     on_unload = getattr(ctx, "on_unload", None)
     if callable(on_unload):
-        on_unload(lambda: clear_plugin_context(ctx))
+        try:
+            ipc_server = ProfileLlmServer(resolve_hermes_home(), ctx.llm).start()
+        except Exception:
+            ipc_server = None
+
+        def _cleanup() -> None:
+            if ipc_server is not None:
+                ipc_server.stop()
+            clear_plugin_context(ctx)
+
+        on_unload(_cleanup)
 
     ctx.register_command(
         "magi",

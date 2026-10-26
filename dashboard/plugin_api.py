@@ -10,6 +10,7 @@ of chat sessions. Stored-memory edits delegate persistence to Hermes' own
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -49,6 +50,7 @@ _HISTORY_MAX_RECORDS = 500
 _HISTORY_MAX_BYTES = 256_000
 _HISTORY_LOCK = threading.Lock()
 _RUNTIME_BRIDGE_PATH = (_PLUGIN_ROOT / "runtime_bridge.py").resolve()
+_RUNTIME_IPC_PATH = _PLUGIN_ROOT / "runtime_ipc.py"
 _PROCESS_APPLIED_MARKERS: set[str] = set()
 
 
@@ -387,6 +389,16 @@ def _plugin_llm() -> Any:
         return active[0]
     if len(active) > 1:
         raise RuntimeError("Multiple Magi Agent contexts are loaded in this plugin host.")
+    spec = importlib.util.spec_from_file_location("magi_dashboard_runtime_ipc", _RUNTIME_IPC_PATH)
+    if spec is not None and spec.loader is not None:
+        try:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            client = module.ProfileLlmClient(resolve_hermes_home())
+            if client.is_available:
+                return client
+        except Exception:
+            pass
     raise RuntimeError(
         "Magi Agent context is unavailable; enable the Agent plugin for this profile."
     )
