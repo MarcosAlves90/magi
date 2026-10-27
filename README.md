@@ -65,7 +65,9 @@ Set these options in the Magi plugin settings:
 | `default_page_size` | `20` | Default number of pending writes listed. |
 | `max_page_size` | `100` | Maximum number of list/search results. |
 
-Choosing a specific `compaction_model` requires Hermes permission `plugins.entries.magi.llm.allow_model_override` and compliance with any configured `allowed_models` restriction.
+Choosing a specific `compaction_model` requires consent to the `llm.model_override` capability, Hermes' LLM override trust permission (`plugins.entries.magi.llm.allow_model_override` on builds using the legacy gate), and compliance with any configured `allowed_models` restriction. Hosts without capability probing deny explicit overrides; the default model remains available.
+
+After upgrading from an older Magi IPC server, restart the Agent plugin; stale protocol-v1 servers are intentionally rejected rather than reused.
 
 ## Commands
 

@@ -38,7 +38,8 @@ function pendingCreatedDate(value) {
 function filterPendingRecords(records, filters = {}) {
   const query = String(filters.query || '').trim().toLocaleLowerCase()
   return records.filter(record => {
-    if (query && !`${record.id} ${record.action} ${record.target} ${record.origin} ${record.summary}`.toLocaleLowerCase().includes(query)) return false
+    const searchable = `${record.id} ${record.action} ${record.target} ${record.origin} ${record.summary}`.toLocaleLowerCase()
+    if (query && !searchable.includes(query)) return false
     if (filters.action && record.action !== filters.action) return false
     if (filters.target && record.target !== filters.target) return false
     if (filters.origin && String(record.origin || 'unknown') !== filters.origin) return false

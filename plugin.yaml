@@ -6,6 +6,8 @@ requires_hermes: ">=0.21.5"
 description: "Review pending Hermes memory writes and inspect, add, edit, delete, or AI-compact stored MEMORY.md and USER.md entries from Desktop."
 license: MIT
 tags: [memory, review, approval, diagnostics]
+capabilities:
+  - llm.model_override
 config_schema:
   home_override:
     type: str
@@ -16,7 +18,7 @@ config_schema:
     type: str
     default: ""
     label: "Compaction model"
-    description: "Optional Hermes model id for AI compaction. Leave empty to use the active/default model. Explicit overrides require Hermes plugins.entries.magi.llm.allow_model_override permission and any configured model allowlist."
+    description: "Optional Hermes model id for AI compaction. Leave empty to use the active/default model. Overrides require llm.model_override consent, the host LLM trust gate, and any configured model allowlist; hosts without capability probing deny overrides."
   default_page_size:
     type: int
     default: 20

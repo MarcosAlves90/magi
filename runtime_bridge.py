@@ -15,6 +15,23 @@ from typing import Any
 _plugin_context: Any = None
 
 
+class _CapabilityAwareLlm:
+    def __init__(self, ctx: Any) -> None:
+        self._ctx = ctx
+
+    def complete_structured(self, **kwargs: Any) -> Any:
+        if kwargs.get("model"):
+            try:
+                granted = self._ctx.has_capability("llm.model_override")
+            except Exception:
+                granted = False
+            if granted is not True:
+                raise PermissionError(
+                    "Magi model overrides require the llm.model_override capability."
+                )
+        return self._ctx.llm.complete_structured(**kwargs)
+
+
 def bind_plugin_context(ctx: Any) -> None:
     global _plugin_context
     _plugin_context = ctx
@@ -31,4 +48,4 @@ def get_plugin_llm() -> Any:
         raise RuntimeError(
             "Magi Agent context is unavailable; enable the Agent plugin for this profile."
         )
-    return _plugin_context.llm
+    return _CapabilityAwareLlm(_plugin_context)

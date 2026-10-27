@@ -1,0 +1,268 @@
+diff --git a/tests/test_desktop.py b/tests/test_desktop.py
+index f2010fbaa07629fbc54dbef4622473afc07757b7..0fac3a3e9e5c8c85741d118dd899691fb8cd26c5 100644
+--- a/tests/test_desktop.py
++++ b/tests/test_desktop.py
+@@ -56,9 +56,16 @@ def client_for(api):
+     return TestClient(app)
+ 
+ 
+-def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
++def test_backend_agent_context_bridge_load_unload_reload_without_global_alias(monkeypatch, tmp_path):
+     """The real Agent registration must be discoverable by the separate API module."""
+     api = load_api()
++    monkeypatch.setattr(api, "resolve_hermes_home", lambda: tmp_path)
++    for module in tuple(sys.modules.values()):
++        if not getattr(module, "__name__", "").endswith(".runtime_bridge"):
++            continue
++        filename = getattr(module, "__file__", None)
++        if filename and Path(filename).resolve() == (ROOT / "runtime_bridge.py").resolve():
++            module.clear_plugin_context()
+     package = "hermes_plugin_magi_bridge_integration"
+ 
+     def load_agent():
+@@ -90,7 +97,7 @@ def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
+     try:
+         plugin = load_agent()
+         llm, callbacks = register_agent(plugin)
+-        assert api._plugin_llm() is llm
++        assert api._plugin_llm() is not llm
+         assert "_magi_runtime_bridge" not in sys.modules
+         callbacks[0]()
+         with pytest.raises(RuntimeError, match="context is unavailable"):
+@@ -99,7 +106,7 @@ def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
+         unload()
+         plugin = load_agent()
+         replacement, callbacks = register_agent(plugin)
+-        assert api._plugin_llm() is replacement
++        assert api._plugin_llm() is not replacement
+         callbacks[0]()
+         unload()
+         with pytest.raises(RuntimeError, match="context is unavailable"):
+@@ -108,6 +115,68 @@ def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
+         unload()
+ 
+ 
++def test_dashboard_ipc_fallback_gates_model_overrides(monkeypatch, tmp_path):
++    api = load_api()
++    monkeypatch.setattr(api, "resolve_hermes_home", lambda: tmp_path)
++    for module in tuple(sys.modules.values()):
++        if not getattr(module, "__name__", "").endswith(".runtime_bridge"):
++            continue
++        filename = getattr(module, "__file__", None)
++        if filename and Path(filename).resolve() == (ROOT / "runtime_bridge.py").resolve():
++            module.clear_plugin_context()
++
++    package = "hermes_plugin_magi_dashboard_fallback_test"
++    spec = importlib.util.spec_from_file_location(
++        package, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)],
++    )
++    assert spec is not None and spec.loader is not None
++    plugin = importlib.util.module_from_spec(spec)
++    sys.modules[package] = plugin
++    spec.loader.exec_module(plugin)
++    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda: tmp_path)
++
++    calls = []
++
++    def complete_structured(**kwargs):
++        calls.append(kwargs)
++        return SimpleNamespace(parsed={"ok": True}, text="{}", provider="fake", model="default")
++
++    callbacks = []
++    ctx = SimpleNamespace(
++        llm=SimpleNamespace(complete_structured=complete_structured),
++        has_capability=lambda capability: False,
++        on_unload=callbacks.append,
++        register_command=lambda *args, **kwargs: None,
++        register_cli_command=lambda *args, **kwargs: None,
++    )
++    plugin.register(ctx)
++    bridge = sys.modules[package + ".runtime_bridge"]
++    bridge.clear_plugin_context(ctx)
++    client = api._plugin_llm()
++    request = {
++        "instructions": "test",
++        "input": [{"type": "text", "text": "synthetic"}],
++        "json_schema": {"type": "object"},
++        "purpose": "test",
++    }
++    try:
++        try:
++            client.complete_structured(**request, model="provider/compact-model")
++        except RuntimeError as exc:
++            assert "request failed" in str(exc)
++        else:
++            raise AssertionError("Dashboard IPC fallback must deny model overrides without capability consent")
++        assert calls == []
++        client.complete_structured(**request)
++        assert len(calls) == 1 and "model" not in calls[0]
++    finally:
++        for callback in callbacks:
++            callback()
++        for name in tuple(sys.modules):
++            if name == package or name.startswith(package + "."):
++                sys.modules.pop(name)
++
++
+ def test_unified_desktop_package_uses_documented_surfaces():
+     load_api()
+     source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+@@ -253,6 +322,7 @@ def test_readme_version_and_two_accessible_local_screenshots():
+         if line.startswith("version:")
+     )
+     assert current_version == "1.8.1"
++    assert "capabilities:\n  - llm.model_override" in manifest, "manifest must declare llm.model_override"
+     assert package["version"] == current_version
+     assert lock["version"] == current_version
+     assert lock["packages"][""]["version"] == current_version
+diff --git a/tests/test_plugin.py b/tests/test_plugin.py
+index fd5d38bb8d66742acddaaf1734cd086f800119f1..98d41c215d366a91c6a517560f0f6603299149c7 100644
+--- a/tests/test_plugin.py
++++ b/tests/test_plugin.py
+@@ -30,12 +30,13 @@ def load_plugin():
+ class FakeCtx:
+     profile_name = "default"
+ 
+-    def __init__(self, settings=None, raise_config=False, llm=None):
++    def __init__(self, settings=None, raise_config=False, llm=None, capabilities=None):
+         self.settings = settings or {}
+         self.raise_config = raise_config
+         self.commands = {}
+         self.cli_commands = {}
+         self.llm = llm
++        self.capabilities = capabilities
+         self.unload_callbacks = []
+ 
+     def get_config(self, key, default=None):
+@@ -52,6 +53,9 @@ class FakeCtx:
+     def on_unload(self, callback):
+         self.unload_callbacks.append(callback)
+ 
++    def has_capability(self, capability):
++        return self.capabilities is None or capability in self.capabilities
++
+ 
+ def test_registers_supported_commands(tmp_path):
+     plugin = load_plugin()
+@@ -65,7 +69,7 @@ def test_registers_supported_commands(tmp_path):
+     assert "memory|user" in ctx.commands["memory-compact-preview"]["args_hint"]
+     bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
+     assert "_magi_runtime_bridge" not in sys.modules
+-    assert bridge.get_plugin_llm() is ctx.llm
++    assert bridge.get_plugin_llm() is not ctx.llm
+     assert len(ctx.unload_callbacks) == 1
+     ctx.unload_callbacks[0]()
+     try:
+@@ -76,6 +80,89 @@ def test_registers_supported_commands(tmp_path):
+         raise AssertionError("unload must clear the bound plugin context")
+ 
+ 
++def test_runtime_bridge_gates_model_overrides_with_capability_consent():
++    plugin = load_plugin()
++    bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
++    denied_llm = FakeLlm([])
++    denied_ctx = FakeCtx(llm=denied_llm, capabilities=set())
++    bridge.bind_plugin_context(denied_ctx)
++    try:
++        proxy = bridge.get_plugin_llm()
++        try:
++            proxy.complete_structured(model="provider/compact-model")
++        except PermissionError as exc:
++            assert "llm.model_override" in str(exc)
++        else:
++            raise AssertionError("model override must be denied without llm.model_override")
++        assert denied_llm.calls == []
++        proxy.complete_structured(instructions="use the active model")
++        assert len(denied_llm.calls) == 1
++        assert "model" not in denied_llm.calls[0]
++    finally:
++        bridge.clear_plugin_context(denied_ctx)
++
++    granted_llm = FakeLlm([])
++    granted_ctx = FakeCtx(llm=granted_llm, capabilities={"llm.model_override"})
++    bridge.bind_plugin_context(granted_ctx)
++    try:
++        bridge.get_plugin_llm().complete_structured(model="provider/compact-model")
++    finally:
++        bridge.clear_plugin_context(granted_ctx)
++    assert granted_llm.calls[0]["model"] == "provider/compact-model"
++
++
++def test_runtime_bridge_fails_closed_without_capability_probe():
++    plugin = load_plugin()
++    bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
++    llm = FakeLlm([])
++    ctx = SimpleNamespace(llm=llm)
++    bridge.bind_plugin_context(ctx)
++    try:
++        proxy = bridge.get_plugin_llm()
++        try:
++            proxy.complete_structured(model="provider/compact-model")
++        except PermissionError as exc:
++            assert "llm.model_override" in str(exc)
++        else:
++            raise AssertionError("explicit model override must fail closed without capability support")
++        assert llm.calls == []
++        proxy.complete_structured(instructions="use the active model")
++        assert len(llm.calls) == 1
++        assert "model" not in llm.calls[0]
++    finally:
++        bridge.clear_plugin_context(ctx)
++
++
++def test_registered_profile_ipc_gates_model_overrides(monkeypatch, tmp_path):
++    plugin = load_plugin()
++    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
++    llm = FakeLlm([])
++    ctx = FakeCtx(llm=llm, capabilities=set())
++    plugin.register(ctx)
++    ipc = sys.modules[plugin.__name__ + ".runtime_ipc"]
++    client = ipc.ProfileLlmClient(tmp_path)
++    request = {
++        "instructions": "test",
++        "input": [{"type": "text", "text": "synthetic"}],
++        "json_schema": {"type": "object"},
++        "purpose": "test",
++    }
++    try:
++        try:
++            client.complete_structured(**request, model="provider/compact-model")
++        except RuntimeError as exc:
++            assert "request failed" in str(exc)
++        else:
++            raise AssertionError("IPC must enforce llm.model_override before invoking provider")
++        assert llm.calls == []
++        client.complete_structured(**request)
++        assert len(llm.calls) == 1
++        assert "model" not in llm.calls[0]
++    finally:
++        for callback in ctx.unload_callbacks:
++            callback()
++
++
+ class FakeLlm:
+     def __init__(self, entries):
+         self.entries = entries
+diff --git a/tests/test_runtime_ipc.py b/tests/test_runtime_ipc.py
+index b8ad6f169dd6601854167ca94c314aa46b9e8cf0..e14f94d97990c466d7383a405d453749fb2bbd6b 100644
+--- a/tests/test_runtime_ipc.py
++++ b/tests/test_runtime_ipc.py
+@@ -414,7 +414,8 @@ def test_profile_lock_rejects_hard_linked_lock_file(tmp_path):
+     assert not (profile / "plugin-data").exists()
+ 
+ 
+-def test_start_rejects_incompatible_listener_without_removing_it(tmp_path):
++@pytest.mark.parametrize("listener_protocol", [1, 999])
++def test_start_rejects_incompatible_listener_without_removing_it(tmp_path, listener_protocol):
+     module = _load_runtime_ipc()
+     runtime_tmp = Path(tempfile.mkdtemp(prefix="magi-ipc-listener-test-", dir="/tmp"))
+     os.chmod(runtime_tmp, 0o700)
+@@ -441,7 +442,7 @@ def test_start_rejects_incompatible_listener_without_removing_it(tmp_path):
+                 connection.settimeout(1)
+                 try:
+                     if connection.recv(4096):
+-                        connection.sendall(b'{"ok":true,"protocol":999}')
++                        connection.sendall(json.dumps({"ok": True, "protocol": listener_protocol}).encode())
+                 except OSError:
+                     pass
+         finally:

@@ -56,9 +56,16 @@ def client_for(api):
     return TestClient(app)
 
 
-def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
+def test_backend_agent_context_bridge_load_unload_reload_without_global_alias(monkeypatch, tmp_path):
     """The real Agent registration must be discoverable by the separate API module."""
     api = load_api()
+    monkeypatch.setattr(api, "resolve_hermes_home", lambda: tmp_path)
+    for module in tuple(sys.modules.values()):
+        if not getattr(module, "__name__", "").endswith(".runtime_bridge"):
+            continue
+        filename = getattr(module, "__file__", None)
+        if filename and Path(filename).resolve() == (ROOT / "runtime_bridge.py").resolve():
+            module.clear_plugin_context()
     package = "hermes_plugin_magi_bridge_integration"
 
     def load_agent():
@@ -90,7 +97,7 @@ def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
     try:
         plugin = load_agent()
         llm, callbacks = register_agent(plugin)
-        assert api._plugin_llm() is llm
+        assert api._plugin_llm() is not llm
         assert "_magi_runtime_bridge" not in sys.modules
         callbacks[0]()
         with pytest.raises(RuntimeError, match="context is unavailable"):
@@ -99,13 +106,75 @@ def test_backend_agent_context_bridge_load_unload_reload_without_global_alias():
         unload()
         plugin = load_agent()
         replacement, callbacks = register_agent(plugin)
-        assert api._plugin_llm() is replacement
+        assert api._plugin_llm() is not replacement
         callbacks[0]()
         unload()
         with pytest.raises(RuntimeError, match="context is unavailable"):
             api._plugin_llm()
     finally:
         unload()
+
+
+def test_dashboard_ipc_fallback_gates_model_overrides(monkeypatch, tmp_path):
+    api = load_api()
+    monkeypatch.setattr(api, "resolve_hermes_home", lambda: tmp_path)
+    for module in tuple(sys.modules.values()):
+        if not getattr(module, "__name__", "").endswith(".runtime_bridge"):
+            continue
+        filename = getattr(module, "__file__", None)
+        if filename and Path(filename).resolve() == (ROOT / "runtime_bridge.py").resolve():
+            module.clear_plugin_context()
+
+    package = "hermes_plugin_magi_dashboard_fallback_test"
+    spec = importlib.util.spec_from_file_location(
+        package, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)],
+    )
+    assert spec is not None and spec.loader is not None
+    plugin = importlib.util.module_from_spec(spec)
+    sys.modules[package] = plugin
+    spec.loader.exec_module(plugin)
+    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda: tmp_path)
+
+    calls = []
+
+    def complete_structured(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(parsed={"ok": True}, text="{}", provider="fake", model="default")
+
+    callbacks = []
+    ctx = SimpleNamespace(
+        llm=SimpleNamespace(complete_structured=complete_structured),
+        has_capability=lambda capability: False,
+        on_unload=callbacks.append,
+        register_command=lambda *args, **kwargs: None,
+        register_cli_command=lambda *args, **kwargs: None,
+    )
+    plugin.register(ctx)
+    bridge = sys.modules[package + ".runtime_bridge"]
+    bridge.clear_plugin_context(ctx)
+    client = api._plugin_llm()
+    request = {
+        "instructions": "test",
+        "input": [{"type": "text", "text": "synthetic"}],
+        "json_schema": {"type": "object"},
+        "purpose": "test",
+    }
+    try:
+        try:
+            client.complete_structured(**request, model="provider/compact-model")
+        except RuntimeError as exc:
+            assert "request failed" in str(exc)
+        else:
+            raise AssertionError("Dashboard IPC fallback must deny model overrides without capability consent")
+        assert calls == []
+        client.complete_structured(**request)
+        assert len(calls) == 1 and "model" not in calls[0]
+    finally:
+        for callback in callbacks:
+            callback()
+        for name in tuple(sys.modules):
+            if name == package or name.startswith(package + "."):
+                sys.modules.pop(name)
 
 
 def test_unified_desktop_package_uses_documented_surfaces():
@@ -253,6 +322,7 @@ def test_readme_version_and_two_accessible_local_screenshots():
         if line.startswith("version:")
     )
     assert current_version == "1.8.1"
+    assert "capabilities:\n  - llm.model_override" in manifest, "manifest must declare llm.model_override"
     assert package["version"] == current_version
     assert lock["version"] == current_version
     assert lock["packages"][""]["version"] == current_version

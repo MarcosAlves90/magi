@@ -1,0 +1,269 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "scope": {
+    "allowed_paths": [
+      "README.md",
+      "plugin.yaml",
+      "__init__.py",
+      "runtime_bridge.py",
+      "desktop/plugin.js",
+      "tests/test_plugin.py",
+      "tests/test_desktop.py",
+      "tests/test_desktop_filters.py",
+      "runtime_ipc.py",
+      "tests/test_runtime_ipc.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_plugin.py",
+      "tests/test_desktop.py",
+      "tests/test_desktop_filters.py",
+      "tests/test_runtime_ipc.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Require explicit Hermes capability consent for model overrides on every supported host, reject stale pre-capability IPC servers, remove the Desktop scanner false positive without changing filtering, and preserve native memory safeguards. Exercise the Dashboard no-Agent fallback through the real profile-local client.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "The manifest declares llm.model_override and user-facing text describes capability consent and model allowlists; default-model requests remain unaffected."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "A plugin-owned LLM facade forwards an explicit model only when ctx.has_capability returns True; missing or failing probes deny overrides, default-model requests remain available, and the host LLM trust/allowlist gates remain in force."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "The Dashboard search filter retains its case-insensitive behavior while avoiding the !-backtick spelling that Hermes security scanning mistakes for inline shell execution."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Memory operations continue to use Hermes-native safeguards; do not replace them with direct file writes or reimplement the store. Hermes source and configuration remain unchanged."
+      },
+      {
+        "id": "REQ-5",
+        "statement": "Bump the profile IPC protocol so older active servers that do not enforce model-override capability consent are treated as incompatible and cannot receive v2 model requests."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Regression tests fail on baseline because capability is undeclared, direct/IPC model overrides pass without consent, a v1 active socket is reused, a host without a capability probe accepts an override, and Dashboard fallback can send an override; after implementation all paths fail closed while default calls and granted overrides work.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Existing executable Desktop filter tests pass and hermes plugins validate no longer reports inline_shell_exec for desktop/plugin.js.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Full CI and POLIS coverage pass without changes to Hermes source/config or native memory semantics.",
+        "requirements": [
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "A live v1 IPC listener is rejected and preserved as incompatible; v2 server/client behavior and normal IPC tests pass.",
+        "requirements": [
+          "REQ-5"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-5",
+        "statement": "With no active Agent bridge in the Dashboard module, its ProfileLlmClient fallback reaches a capability-aware IPC server: explicit overrides fail and default-model requests succeed; test setup verifies the plugin module loaded before exercising the route.",
+        "requirements": [
+          "REQ-2",
+          "REQ-5"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No Hermes source, Hermes configuration, credentials, or memory content is modified."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Explicit model overrides require a positive llm.model_override capability result; absent or failing capability probes never fall back to the legacy host gate, and ctx.llm trust/allowlist checks remain additional controls."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Memory reads, writes and pending approvals retain Hermes-native safeguards; no direct-write replacement is introduced."
+      },
+      {
+        "id": "INV-4",
+        "statement": "No catalog pin update or tag is created in this change."
+      },
+      {
+        "id": "INV-5",
+        "statement": "No IPC request reaches a legacy ungated server after the protocol version change; legacy servers fail closed until restarted."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "An explicit model override reaches ctx.llm when capability consent is absent, denied, or cannot be checked."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "The filter refactor changes search results or removes the documented Desktop SDK integration."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "Hermes source, user config, or memory is changed."
+      },
+      {
+        "id": "FORBID-4",
+        "statement": "A profile IPC listener using the old protocol is accepted as compatible or receives a model override request."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Current Hermes validators pass but report missing capability declaration, private core imports, and an inline-shell false positive."
+      },
+      {
+        "id": "IN-2",
+        "statement": "Current Hermes PluginContext exposes has_capability and ctx.llm enforces the legacy model-override trust gate."
+      },
+      {
+        "id": "IN-3",
+        "statement": "No documented public PluginContext API was found for reading built-in memory state or applying native pending-memory decisions; these operations must not be reimplemented unsafely."
+      },
+      {
+        "id": "IN-4",
+        "statement": "The existing IPC protocol version is reused by old servers that forward model= directly to ctx.llm, bypassing the new capability-aware wrapper after an in-place plugin update."
+      },
+      {
+        "id": "IN-5",
+        "statement": "The plugin minimum Hermes version includes hosts without ctx.has_capability; explicit override behavior must fail closed on those hosts while default-model requests remain supported."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Plugin-only capability declaration/check, versioned IPC compatibility boundary, and Desktop scanner-warning cleanup, with old hosts failing closed for explicit overrides and the Hermes public memory API gap reported."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If ctx.has_capability is absent, raises, or denies, the configured model is not forwarded; default-model calls still use ctx.llm."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "If removing private core imports requires undocumented memory APIs or bypasses native transactions, stop and report the upstream API blocker."
+      },
+      {
+        "id": "FAIL-3",
+        "statement": "If an older protocol server is already active, new plugin instances reject it and requests fail safely until the Agent plugin is restarted; the old server is not removed."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "fe9d7d72806947032fabe8f5874c7eb63976d98a",
+    "base_tree": "babcd45c865fd7b8fa6ea8fff08047b61d0b4a30",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "5ee38bef3cd02c54633f478b6c7d1a663ca48c5770ff1540036ba83cbcc40ce7"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_plugin.py tests/test_desktop.py tests/test_desktop_filters.py tests/test_runtime_ipc.py --rootdir=tests"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 600,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_plugin.py tests/test_desktop.py tests/test_desktop_filters.py tests/test_runtime_ipc.py --rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "manifest must declare llm.model_override",
+      "model override must be denied without llm.model_override",
+      "IPC must enforce llm.model_override before invoking provider",
+      "DID NOT RAISE",
+      "explicit model override must fail closed without capability support",
+      "Dashboard IPC fallback must deny model overrides without capability consent"
+    ]
+  }
+}

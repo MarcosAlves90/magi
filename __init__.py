@@ -20,7 +20,7 @@ from .core import (
     resolve_hermes_home,
     tokenize,
 )
-from .runtime_bridge import bind_plugin_context, clear_plugin_context
+from .runtime_bridge import bind_plugin_context, clear_plugin_context, get_plugin_llm
 from .runtime_ipc import ProfileLlmServer
 
 
@@ -108,7 +108,7 @@ def _compact_preview(ctx, raw_args: str) -> str:
         model = str(ctx.get_config("compaction_model", default="") or "").strip() or None
     except Exception:
         model = None
-    result = build_memory_compaction_preview(ctx.llm, target, entries, _entry_delimiter(), model=model)
+    result = build_memory_compaction_preview(get_plugin_llm(), target, entries, _entry_delimiter(), model=model)
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -125,7 +125,7 @@ def register(ctx) -> None:
     on_unload = getattr(ctx, "on_unload", None)
     if callable(on_unload):
         try:
-            ipc_server = ProfileLlmServer(resolve_hermes_home(), ctx.llm).start()
+            ipc_server = ProfileLlmServer(resolve_hermes_home(), get_plugin_llm()).start()
         except Exception:
             ipc_server = None
 

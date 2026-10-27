@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from typing import Any, Iterator, cast
 
 
-_PROTOCOL_VERSION = 1
+_PROTOCOL_VERSION = 2
 _MAX_REQUEST_BYTES = 1_000_000
 _MAX_RESPONSE_BYTES = 2_000_000
 _REQUEST_TIMEOUT_SECONDS = 300

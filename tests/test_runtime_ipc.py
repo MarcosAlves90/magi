@@ -414,7 +414,8 @@ def test_profile_lock_rejects_hard_linked_lock_file(tmp_path):
     assert not (profile / "plugin-data").exists()
 
 
-def test_start_rejects_incompatible_listener_without_removing_it(tmp_path):
+@pytest.mark.parametrize("listener_protocol", [1, 999])
+def test_start_rejects_incompatible_listener_without_removing_it(tmp_path, listener_protocol):
     module = _load_runtime_ipc()
     runtime_tmp = Path(tempfile.mkdtemp(prefix="magi-ipc-listener-test-", dir="/tmp"))
     os.chmod(runtime_tmp, 0o700)
@@ -441,7 +442,7 @@ def test_start_rejects_incompatible_listener_without_removing_it(tmp_path):
                 connection.settimeout(1)
                 try:
                     if connection.recv(4096):
-                        connection.sendall(b'{"ok":true,"protocol":999}')
+                        connection.sendall(json.dumps({"ok": True, "protocol": listener_protocol}).encode())
                 except OSError:
                     pass
         finally:
