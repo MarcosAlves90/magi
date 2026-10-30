@@ -830,6 +830,26 @@ def test_backend_lists_and_renders_pending_records(monkeypatch, tmp_path):
     assert "OK abc123" in data["verify"]
 
 
+def test_backend_record_detail_loads_pending_queue_once(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    stage(tmp_path, "abc123", {"action": "add", "target": "memory", "content": "new"})
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(memory=["old"]))
+    load_count = 0
+    original_load = api.MagiReview._load
+
+    def count_loads(review):
+        nonlocal load_count
+        load_count += 1
+        return original_load(review)
+
+    monkeypatch.setattr(api.MagiReview, "_load", count_loads)
+    detail = client_for(api).get("/records/abc123")
+
+    assert detail.status_code == 200
+    assert load_count == 1, f"expected one queue read, got {load_count}"
+
+
 class FakeMemoryStore:
     def __init__(
         self,

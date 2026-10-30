@@ -969,6 +969,9 @@ delegates decisions to Hermes native commands:
         if err:
             return err
         assert r is not None
+        return self._show_record(r)
+
+    def _show_record(self, r: Record) -> str:
         errors, warnings = self.validate_record(r)
         lines = [self._header(r), "", "Payload:", _json(r.payload)]
         if errors or warnings:
@@ -979,15 +982,33 @@ delegates decisions to Hermes native commands:
 
     def raw(self, selector: str) -> str:
         r, err = self._resolve(selector)
-        return err if err else _json(r.data)  # type: ignore[union-attr]
+        if err:
+            return err
+        assert r is not None
+        return self._raw_record(r)
+
+    @staticmethod
+    def _raw_record(r: Record) -> str:
+        return _json(r.data)
 
     def diff(self, selector: str) -> str:
         r, err = self._resolve(selector)
         if err:
             return err
         assert r is not None
+        return self._diff_record(r)
+
+    def _diff_record(self, r: Record) -> str:
         blocks = [self._op_diff(label, op) for label, op in self._op_blocks(r.payload)]
         return self._header(r) + "\n\n" + "\n\n".join(blocks)
+
+    def render_detail(self, r: Record) -> Dict[str, str]:
+        return {
+            "proposal": self._show_record(r),
+            "diff": self._diff_record(r),
+            "raw": self._raw_record(r),
+            "verify": self._verify_records([r], []),
+        }
 
     def path(self, selector: str) -> str:
         r, err = self._resolve(selector)
@@ -1035,18 +1056,8 @@ delegates decisions to Hermes native commands:
             f"Origins: {fmt(by_origin)}",
         ])
 
-    def verify(self, selector: str = "all") -> str:
-        records, storage_issues = self._load()
+    def _verify_records(self, selected: List[Record], storage_issues: List[str]) -> str:
         lines: List[str] = []
-
-        if selector == "all":
-            selected = records
-        else:
-            r, err = self._resolve(selector)
-            if err:
-                return err
-            selected = [r] if r else []
-
         total_errors = 0
         total_warnings = 0
         for r in selected:
@@ -1058,10 +1069,9 @@ delegates decisions to Hermes native commands:
             lines += [f"  ERROR: {_safe_text(x)}" for x in errors]
             lines += [f"  WARN:  {_safe_text(x)}" for x in warnings]
 
-        if selector == "all":
-            for issue in storage_issues:
-                total_errors += 1
-                lines.append(f"ERROR {_safe_text(issue)}")
+        for issue in storage_issues:
+            total_errors += 1
+            lines.append(f"ERROR {_safe_text(issue)}")
 
         if not lines:
             lines.append("No pending memory writes to verify.")
@@ -1072,6 +1082,18 @@ delegates decisions to Hermes native commands:
             f"{len(selected)} record(s) checked.",
         ]
         return "\n".join(lines)
+
+    def verify(self, selector: str = "all") -> str:
+        records, storage_issues = self._load()
+        if selector == "all":
+            selected = records
+        else:
+            r, err = self._resolve(selector)
+            if err:
+                return err
+            selected = [r] if r else []
+            storage_issues = []
+        return self._verify_records(selected, storage_issues)
 
     # ---------- command dispatch ----------
 
