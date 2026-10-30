@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -169,6 +170,47 @@ def test_ipc_denies_model_override_without_consent(tmp_path, monkeypatch):
     finally:
         for callback in unload_callbacks:
             callback()
+
+
+def test_ipc_preserves_registration_context_for_llm_call(tmp_path, monkeypatch):
+    profile_context = ContextVar("magi_profile_context", default="unset")
+    token = profile_context.set("mariupol")
+    plugin = load_plugin()
+    profile = tmp_path.resolve()
+    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda override="": profile)
+
+    class ContextLlm:
+        def __init__(self):
+            self.context_values = []
+
+        def complete_structured(self, **kwargs):
+            self.context_values.append(profile_context.get())
+            payload = {"status": "compacted", "reason": "", "entries": ["synthetic"]}
+            return SimpleNamespace(
+                parsed=payload,
+                text=json.dumps(payload),
+                provider="test-provider",
+                model="test-model",
+            )
+
+    llm = ContextLlm()
+    ctx = FakeCtx({"home_override": str(profile)}, llm=llm)
+    try:
+        plugin.register(ctx)
+        ipc = sys.modules[plugin.__name__ + ".runtime_ipc"]
+        client = ipc.ProfileLlmClient(profile)
+        result = client.complete_structured(
+            instructions="test",
+            input=[{"type": "text", "text": "synthetic"}],
+            json_schema={"type": "object"},
+            purpose="test",
+        )
+        assert result.parsed["entries"] == ["synthetic"]
+        assert llm.context_values == ["mariupol"]
+    finally:
+        for callback in ctx.unload_callbacks:
+            callback()
+        profile_context.reset(token)
 
 
 class FakeLlm:
