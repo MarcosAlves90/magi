@@ -605,14 +605,12 @@ def record_detail(selector: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=error)
     assert record is not None
     target_status = _target_status_for_records([record])[record.id]
+    rendered = review.render_detail(record)
     return {
         "id": record.id,
         "record": _record_summary(record, target_status),
         "payload": record.payload,
-        "proposal": review.show(record.id),
-        "diff": review.diff(record.id),
-        "raw": review.raw(record.id),
-        "verify": review.verify(record.id),
+        **rendered,
     }
 
 
