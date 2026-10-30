@@ -31,7 +31,8 @@ Pending decisions and memory edits use Hermes' native safeguards. AI actions sen
 ## Get started
 
 ```bash
-hermes plugins install https://github.com/MarcosAlves90/magi
+hermes plugins install \
+  https://github.com/MarcosAlves90/magi
 hermes plugins enable magi
 ```
 
