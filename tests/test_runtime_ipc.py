@@ -529,11 +529,10 @@ def test_unload_waits_past_client_timeout_for_provider_return(tmp_path):
     assert not client.is_available
 
 
-def test_server_readiness_signal_does_not_depend_on_polling(tmp_path):
+def test_server_readiness_signal_does_not_depend_on_polling(tmp_path, monkeypatch):
     module = _load_runtime_ipc()
-    runtime_tmp = Path(os.environ["TMPDIR"]) / f"magi-ipc-ready-{os.getpid()}"
-    runtime_tmp.mkdir(mode=0o700)
-    socket_path = runtime_tmp / "ready.sock"
+    monkeypatch.delenv("TMPDIR", raising=False)
+    socket_path = tmp_path.parent / "r"
     server = module._ThreadedUnixServer(str(socket_path), FakeLlm())
     server.service_actions = lambda: None
     thread = threading.Thread(
@@ -546,7 +545,7 @@ def test_server_readiness_signal_does_not_depend_on_polling(tmp_path):
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
-        shutil.rmtree(runtime_tmp, ignore_errors=True)
+        socket_path.unlink(missing_ok=True)
     assert not thread.is_alive()
 
 
