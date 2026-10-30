@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.8.4 — 2026-10-30
+
+- Preserve Hermes' active profile context for LLM requests through the profile-local IPC bridge, ensuring profile-scoped AI actions resolve against the intended context.
+
 ## 1.8.3 — 2026-10-30
 
 - Render pending-record details from the already-loaded record, avoiding repeated queue reads while preserving response content.

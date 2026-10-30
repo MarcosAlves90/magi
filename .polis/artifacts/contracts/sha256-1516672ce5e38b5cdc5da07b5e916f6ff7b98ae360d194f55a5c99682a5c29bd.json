@@ -1,0 +1,202 @@
+{
+  "schema_version": 6,
+  "kind": "behavior_preserving",
+  "scope": {
+    "allowed_paths": [
+      "CHANGELOG.md",
+      "README.md",
+      "plugin.yaml",
+      "package.json",
+      "package-lock.json",
+      "docs/hermes-compatibility-matrix.md",
+      "docs/hermes-memory-compatibility.md",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Prepare Magi 1.8.4 patch-release metadata and dated notes for the merged profile-context propagation change, without changing runtime behavior or dependencies; publish only after validation and CI pass.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "The plugin manifest, npm test-package metadata and lockfile root entries, README, and current compatibility-document titles consistently report Magi 1.8.4."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "The dated 1.8.4 changelog section records the merged profile-context propagation change in Magi's profile-local IPC bridge and preserves the complete 1.8.3 and older history."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "The metadata-only release preparation does not change runtime behavior or dependencies; the version/history characterization passes on both the locked baseline and target, and the full Python suite plus enabled coverage gate pass on the exact target tree."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "The metadata test derives the current version from package.json, verifies every authoritative version source and the current dated changelog heading, and passes on the 1.8.3 baseline and 1.8.4 target.",
+        "requirements": [
+          "REQ-1",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "The 1.8.4 changelog section dated 2026-10-30 describes the merged profile-context IPC change; the complete 1.8.3 and older history remains unchanged.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "The same bash ci/test.sh characterization command passes on baseline and target; test.complete and coverage gates pass on the target, and ./verify.sh completes on the target.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No runtime/plugin logic, dependency versions, Hermes configuration, credentials, or user memory data are changed."
+      },
+      {
+        "id": "INV-2",
+        "statement": "The v1.8.3 release history and all earlier changelog sections remain intact; existing tags and releases are never moved or overwritten."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Create the v1.8.4 tag and hosted release only after source validation and required CI pass for the exact release commit."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Authoritative version sources disagree, the 1.8.4 dated release notes omit the merged IPC context change, or prior release notes are lost."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Runtime behavior, dependencies, Hermes configuration, credentials, or user memory data change."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "A tag or hosted release is published before the exact commit passes enabled validation and required CI."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "The clean release-preparation baseline is main at commit 54188fb3afaf1f0050d4eb52888867bb2879d941, including merged PR #4."
+      },
+      {
+        "id": "IN-2",
+        "statement": "The latest published release is v1.8.3 at commit dde0386bf8fe42a09af2dedb92d6bd425580087b; the only post-tag change is PR #4's profile-context propagation fix."
+      },
+      {
+        "id": "IN-3",
+        "statement": "Current version sources are 1.8.3; CHANGELOG.md has an empty Unreleased heading followed by dated release sections."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Consistent Magi 1.8.4 source metadata and dated release notes validated as behavior-preserving, ready for publication after CI."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If baseline/target characterization, target coverage, exact-commit CI, or publication read-back fails, do not claim or publish a completed release; preserve the prior v1.8.3 release."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "54188fb3afaf1f0050d4eb52888867bb2879d941",
+    "base_tree": "133647a3648b4e595492fcf3656e786d3bcfb2ec",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "f321f801ad34df48d4265cc1374d40e7439efee1c8ee9eaeae00f9de91665ca4"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "green_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "bash ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    }
+  }
+}

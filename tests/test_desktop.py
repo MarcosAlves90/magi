@@ -349,6 +349,10 @@ def test_readme_version_and_three_accessible_local_screenshots():
         assert "documentation" in release_183_notes
         assert "workflow diagram" in release_183_notes
         assert "synthetic Desktop screenshots" in release_183_notes
+    if current_version == "1.8.4":
+        release_184_notes = changelog.split(f"{current_heading}\n", 1)[1].split("\n## 1.8.3 —", 1)[0]
+        assert "Hermes' active profile context" in release_184_notes
+        assert "profile-local IPC bridge" in release_184_notes
     previous_release = changelog.split("## 1.8.0 — 2026-10-23", 1)[1].split("## 1.7.8 —", 1)[0]
     assert all(f"MAGI-{task}" in previous_release for task in ("001", "009", "011", "015", "019", "020"))
     assert "## 1.8.0 — 2026-10-23" in changelog

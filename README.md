@@ -4,7 +4,7 @@
 
 ![Magi cover banner](docs/magi-cover-banner.png)
 
-**Current version:** 1.8.3 · **Requires Hermes:** `>=0.21.5`
+**Current version:** 1.8.4 · **Requires Hermes:** `>=0.21.5`
 
 Magi brings pending memory proposals and Hermes' durable `MEMORY.md` / `USER.md` stores into one Desktop workspace. Review changes before they become durable, maintain the context you want Hermes to carry forward, and keep optional AI assistance behind a preview and explicit confirmation.
 

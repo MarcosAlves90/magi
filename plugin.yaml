@@ -1,5 +1,5 @@
 name: magi
-version: 1.8.3
+version: 1.8.4
 manifest_version: 2
 api_version: 1
 requires_hermes: ">=0.21.5"
