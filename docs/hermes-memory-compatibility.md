@@ -1,4 +1,4 @@
-# Hermes memory compatibility: Magi 1.8.2
+# Hermes memory compatibility: Magi 1.8.3
 
 This note records the compatibility boundaries identified while addressing
 [Hermes catalog PR #140369](https://github.com/NousResearch/hermes-agent/pull/140369),

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.8.3 — 2026-10-30
+
+- Render pending-record details from the already-loaded record, avoiding repeated queue reads while preserving response content.
+- Reorganized the documentation into focused guides, updated the workflow diagram, and refreshed the synthetic Desktop screenshots including History.
+
 ## 1.8.2 — 2026-10-29
 
 - Require explicit `llm.model_override` consent for compaction-model overrides; hosts without capability probing fail closed while default-model requests remain available.

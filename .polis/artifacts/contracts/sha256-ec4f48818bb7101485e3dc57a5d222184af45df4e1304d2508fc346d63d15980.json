@@ -1,0 +1,202 @@
+{
+  "schema_version": 6,
+  "kind": "behavior_preserving",
+  "scope": {
+    "allowed_paths": [
+      "CHANGELOG.md",
+      "README.md",
+      "plugin.yaml",
+      "package.json",
+      "package-lock.json",
+      "docs/hermes-compatibility-matrix.md",
+      "docs/hermes-memory-compatibility.md",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Prepare Magi 1.8.3 patch-release metadata and dated notes for the merged record-detail optimization and accumulated documentation refresh, without changing runtime behavior or dependencies; publish only after validation and CI pass.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "The plugin manifest, npm test-package metadata and lockfile root entries, README, and current compatibility-document titles consistently report Magi 1.8.3."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "The dated 1.8.3 changelog section records the record-detail queue-read optimization and the user-facing documentation/diagram/screenshot refresh since v1.8.2, while preserving the complete 1.8.2 and older history."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "The metadata-only patch does not change runtime behavior or dependencies; the version/history characterization passes on both the locked baseline and target, and the full Python suite and enabled coverage gate pass on the target."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "The existing metadata test derives the current version from package.json, verifies every authoritative version source and the current dated changelog heading, and passes on both the 1.8.2 baseline and the 1.8.3 target.",
+        "requirements": [
+          "REQ-1",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "The 1.8.3 changelog entry dated 2026-10-30 records the merged detail-rendering optimization and accumulated documentation refresh; 1.8.2 and older sections remain unchanged.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "The same bash ci/test.sh characterization command passes on baseline and target, and the enabled test.complete and coverage gates pass on the exact target tree.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No runtime/plugin logic, dependency versions, Hermes configuration, credentials, or user memory data are changed."
+      },
+      {
+        "id": "INV-2",
+        "statement": "The v1.8.2 release history and all earlier changelog sections remain intact; existing tags and releases are never moved or overwritten."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Create the v1.8.3 tag and hosted release only after source validation and CI pass for the exact release commit."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Authoritative version sources disagree, the 1.8.3 dated release notes omit changes since v1.8.2, or prior release notes are lost."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Runtime behavior, dependencies, Hermes configuration, credentials, or user memory data change."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "A tag or hosted release is published before the exact commit passes enabled validation and required CI."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "The clean baseline is main at commit 639d3ee57020fa0618a5645873c29058f832f869, including merged PR #3."
+      },
+      {
+        "id": "IN-2",
+        "statement": "The latest published release is v1.8.2; all post-tag changes are the documentation reorganization/diagram/screenshot refresh and the merged record-detail queue-read optimization."
+      },
+      {
+        "id": "IN-3",
+        "statement": "Current version sources are 1.8.2; the changelog uses an Unreleased heading followed by dated release sections."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Consistent Magi 1.8.3 source metadata and a dated 1.8.3 changelog section validated as behavior-preserving, ready for direct-main publication after CI."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If baseline/target characterization, target coverage, exact-commit CI, or publication read-back fails, do not claim or publish a completed release; preserve the prior v1.8.2 release."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "639d3ee57020fa0618a5645873c29058f832f869",
+    "base_tree": "e60b14d94027a9670fdb59d4ea6c4422cd1beb11",
+    "policy_sha256": "58faac8d898e812c38428bccaee227000fa1bbced1a08fc3f22e7bec7cf4cf64",
+    "specification_sha256": "d10491b1d797a88489ceae4db5b380170798c3d195e45cade69315ae2d729fb6"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "green_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "bash ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    }
+  }
+}
