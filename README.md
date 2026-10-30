@@ -22,6 +22,10 @@ Magi brings pending memory proposals and Hermes' durable `MEMORY.md` / `USER.md`
 
 ![Magi Stored memory: memory budget, entry list, and editing controls](docs/screenshots/stored-memory.png)
 
+### History
+
+![Magi History: metadata-only local action audit](docs/screenshots/history.png)
+
 ## How it works
 
 ![Magi human-reviewed memory workflow](docs/magi-memory-workflow.png)

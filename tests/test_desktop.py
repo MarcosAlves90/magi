@@ -309,7 +309,7 @@ def test_magi_workspace_label_and_compaction_icon():
     assert "stroke: 'currentColor'" in compact_button
 
 
-def test_readme_version_and_two_accessible_local_screenshots():
+def test_readme_version_and_three_accessible_local_screenshots():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
@@ -341,6 +341,7 @@ def test_readme_version_and_two_accessible_local_screenshots():
     screenshots = (
         ("Pending writes", "pending-writes.png"),
         ("Stored memory", "stored-memory.png"),
+        ("History", "history.png"),
     )
     sizes = []
     for title, filename in screenshots:
@@ -355,7 +356,7 @@ def test_readme_version_and_two_accessible_local_screenshots():
         assert header[:8] == b"\x89PNG\r\n\x1a\n"
         assert header[12:16] == b"IHDR"
         sizes.append(struct.unpack(">II", header[16:24]))
-    assert sizes == [(1414, 994), (1414, 994)]
+    assert sizes == [(1414, 994)] * 3
 
 
 def test_readme_workflow_diagram_is_an_accessible_local_png():
