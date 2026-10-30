@@ -133,14 +133,22 @@ def test_runtime_bridge_fails_closed_without_capability_probe():
         bridge.clear_plugin_context(ctx)
 
 
-def test_registered_profile_ipc_gates_model_overrides(monkeypatch, tmp_path):
+def test_ipc_denies_model_override_without_consent(tmp_path, monkeypatch):
     plugin = load_plugin()
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    profile = tmp_path.resolve()
+    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda override="": profile)
     llm = FakeLlm([])
-    ctx = FakeCtx(llm=llm, capabilities=set())
+    unload_callbacks = []
+    ctx = SimpleNamespace(
+        llm=llm,
+        has_capability=lambda _: False,
+        on_unload=unload_callbacks.append,
+        register_command=lambda *args, **kwargs: None,
+        register_cli_command=lambda *args, **kwargs: None,
+    )
     plugin.register(ctx)
     ipc = sys.modules[plugin.__name__ + ".runtime_ipc"]
-    client = ipc.ProfileLlmClient(tmp_path)
+    client = ipc.ProfileLlmClient(profile)
     request = {
         "instructions": "test",
         "input": [{"type": "text", "text": "synthetic"}],
@@ -150,16 +158,16 @@ def test_registered_profile_ipc_gates_model_overrides(monkeypatch, tmp_path):
     try:
         try:
             client.complete_structured(**request, model="provider/compact-model")
-        except RuntimeError as exc:
-            assert "request failed" in str(exc)
+        except RuntimeError:
+            pass
         else:
-            raise AssertionError("IPC must enforce llm.model_override before invoking provider")
-        assert llm.calls == []
-        client.complete_structured(**request)
-        assert len(llm.calls) == 1
-        assert "model" not in llm.calls[0]
+            raise AssertionError("IPC model override was not denied without capability consent")
+        assert not llm.calls
+        result = client.complete_structured(**request)
+        assert result.parsed["status"] == "compacted"
+        assert len(llm.calls) == 1 and "model" not in llm.calls[0]
     finally:
-        for callback in ctx.unload_callbacks:
+        for callback in unload_callbacks:
             callback()
 
 

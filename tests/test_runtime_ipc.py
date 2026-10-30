@@ -8,7 +8,6 @@ import socket
 import stat
 import subprocess
 import sys
-import tempfile
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -353,9 +352,8 @@ def test_invalid_response_shape_and_provider_exception_are_redacted(tmp_path):
 
 def test_long_home_start_creates_fresh_profile_alias(tmp_path, monkeypatch):
     module = _load_runtime_ipc()
-    runtime_tmp = Path(tempfile.mkdtemp(prefix="magi-ipc-test-", dir="/tmp"))
-    os.chmod(runtime_tmp, 0o700)
-    monkeypatch.setenv("TMPDIR", str(runtime_tmp))
+    runtime_tmp = tmp_path / "magi-ipc-test"
+    runtime_tmp.mkdir(mode=0o700)
     profile = runtime_tmp / ("profile-" + "x" * 100)
     profile.mkdir(mode=0o700)
     socket_path = module.profile_socket_path(profile)
@@ -374,7 +372,8 @@ def test_long_home_start_creates_fresh_profile_alias(tmp_path, monkeypatch):
 
 def test_long_home_rejects_user_owned_symlink_tmpdir(tmp_path, monkeypatch):
     module = _load_runtime_ipc()
-    runtime_tmp = Path(tempfile.mkdtemp(prefix="magi-ipc-symlink-test-", dir="/tmp"))
+    runtime_tmp = tmp_path / "magi-ipc-symlink-test"
+    runtime_tmp.mkdir(mode=0o700)
     target = runtime_tmp / "private-tmp"
     target.mkdir(mode=0o700)
     os.chmod(target, 0o700)
@@ -417,13 +416,23 @@ def test_profile_lock_rejects_hard_linked_lock_file(tmp_path):
 @pytest.mark.parametrize("listener_protocol", [1, 999])
 def test_start_rejects_incompatible_listener_without_removing_it(tmp_path, listener_protocol):
     module = _load_runtime_ipc()
-    runtime_tmp = Path(tempfile.mkdtemp(prefix="magi-ipc-listener-test-", dir="/tmp"))
+    runtime_tmp = tmp_path / "magi-ipc-listener-test"
+    runtime_tmp.mkdir(mode=0o700)
     os.chmod(runtime_tmp, 0o700)
     profile = (runtime_tmp / "profile").resolve()
-    socket_path = profile / "plugin-data" / "magi" / "llm.sock"
-    socket_path.parent.mkdir(parents=True, mode=0o700)
-    os.chmod(socket_path.parent, 0o700)
-    assert module.profile_socket_path(profile) == socket_path
+    profile.mkdir(mode=0o700)
+    public_path = profile / module._SOCKET_RELATIVE_PATH
+    socket_path = module.profile_socket_path(profile)
+    if socket_path == public_path:
+        socket_path.parent.mkdir(parents=True, mode=0o700)
+        os.chmod(socket_path.parent, 0o700)
+    else:
+        runtime_root = socket_path.parents[1]
+        runtime_root.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(runtime_root, 0o700)
+        socket_path.parent.symlink_to(profile, target_is_directory=True)
+        public_path.parent.mkdir(parents=True, mode=0o700)
+        public_path.symlink_to(profile / module._LONG_HOME_SOCKET_NAME)
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(socket_path))
     os.chmod(socket_path, 0o600)
@@ -452,7 +461,7 @@ def test_start_rejects_incompatible_listener_without_removing_it(tmp_path, liste
     responder.start()
     server = module.ProfileLlmServer(profile, FakeLlm())
     try:
-        with pytest.raises(RuntimeError, match="compatible|Magi"):
+        with pytest.raises(RuntimeError, match="incompatible"):
             server.start()
         assert socket_path.is_socket()
     finally:
@@ -462,6 +471,10 @@ def test_start_rejects_incompatible_listener_without_removing_it(tmp_path, liste
             current = socket_path.lstat()
             if (current.st_dev, current.st_ino) == identity:
                 socket_path.unlink()
+        if public_path.is_symlink():
+            public_path.unlink()
+        if socket_path.parent.is_symlink():
+            socket_path.parent.unlink()
         shutil.rmtree(runtime_tmp, ignore_errors=True)
     assert not responder.is_alive()
 
@@ -518,8 +531,8 @@ def test_unload_waits_past_client_timeout_for_provider_return(tmp_path):
 
 def test_server_readiness_signal_does_not_depend_on_polling(tmp_path):
     module = _load_runtime_ipc()
-    runtime_tmp = Path(tempfile.mkdtemp(prefix="magi-ipc-ready-test-", dir="/tmp"))
-    os.chmod(runtime_tmp, 0o700)
+    runtime_tmp = Path(os.environ["TMPDIR"]) / f"magi-ipc-ready-{os.getpid()}"
+    runtime_tmp.mkdir(mode=0o700)
     socket_path = runtime_tmp / "ready.sock"
     server = module._ThreadedUnixServer(str(socket_path), FakeLlm())
     server.service_actions = lambda: None
