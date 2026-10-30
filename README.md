@@ -24,7 +24,7 @@ Magi brings pending memory proposals and Hermes' durable `MEMORY.md` / `USER.md`
 
 ## How it works
 
-![Magi workflow: review pending proposals and manage stored memory with optional AI previews](docs/magi-workflow.svg)
+![Magi human-reviewed memory workflow](docs/magi-memory-workflow.png)
 
 Pending decisions and memory edits use Hermes' native safeguards. AI actions send selected memory through the model/provider configured in Hermes; they do not write automatically.
 
