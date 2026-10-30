@@ -321,7 +321,7 @@ def test_readme_version_and_two_accessible_local_screenshots():
         line.partition(":")[2].strip() for line in manifest.splitlines()
         if line.startswith("version:")
     )
-    assert current_version == "1.8.1"
+    assert current_version == "1.8.2"
     assert "capabilities:\n  - llm.model_override" in manifest, "manifest must declare llm.model_override"
     assert package["version"] == current_version
     assert lock["version"] == current_version
@@ -329,9 +329,9 @@ def test_readme_version_and_two_accessible_local_screenshots():
     assert f"**Current version:** {current_version}" in readme
     assert f"# Hermes compatibility checks for Magi {current_version}" in matrix
     assert f"# Hermes memory compatibility: Magi {current_version}" in memory_compatibility
-    release_notes = changelog.split(f"## {current_version} — 2026-10-26", 1)[1].split("## 1.8.0 —", 1)[0]
-    assert "Redesigned the Desktop workspace" in release_notes
-    assert "profile-local Unix socket" in release_notes
+    release_notes = changelog.split(f"## {current_version} — 2026-10-29", 1)[1].split("## 1.8.1 — 2026-10-26", 1)[0]
+    assert "llm.model_override" in release_notes
+    assert "protocol v2" in release_notes
     previous_release = changelog.split("## 1.8.0 — 2026-10-23", 1)[1].split("## 1.7.8 —", 1)[0]
     assert all(f"MAGI-{task}" in previous_release for task in ("001", "009", "011", "015", "019", "020"))
     assert "## 1.8.0 — 2026-10-23" in changelog

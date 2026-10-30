@@ -1,4 +1,4 @@
-# Hermes compatibility checks for Magi 1.8.1
+# Hermes compatibility checks for Magi 1.8.2
 
 The GitHub Actions matrix tests three **immutable Hermes commits** in separate
 jobs. The minimum and existing pinned revision are required; the latest stable

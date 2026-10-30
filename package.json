@@ -1,7 +1,7 @@
 {
   "name": "magi-desktop-interaction-tests",
   "private": true,
-  "version": "1.8.1",
+  "version": "1.8.2",
   "type": "module",
   "scripts": {
     "test:desktop": "vitest run --config vitest.config.mjs"

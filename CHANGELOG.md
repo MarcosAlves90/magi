@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.8.2 — 2026-10-29
+
+- Require explicit `llm.model_override` consent for compaction-model overrides; hosts without capability probing fail closed while default-model requests remain available.
+- Version the profile-local IPC bridge as protocol v2 and reject active legacy listeners that cannot enforce the consent gate. Preserve Dashboard's case-insensitive search behavior while avoiding Hermes' inline shell-scan spelling.
+
 ## 1.8.1 — 2026-10-26
 
 - Redesigned the Desktop workspace with a full-width memory list/editor, always-visible usage estimates and common actions, responsive review panes, inline history filters, and explicit accessible confirmations. Existing memory, transfer, AI, pending-write, and audit safeguards remain intact.

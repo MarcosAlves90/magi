@@ -2,7 +2,7 @@
 
 Magi is a Hermes plugin for reviewing pending memory writes and managing the built-in `MEMORY.md` and `USER.md` stores in Hermes Desktop. Requires Hermes `>=0.21.5`.
 
-**Current version:** 1.8.1
+**Current version:** 1.8.2
 
 ![Magi cover banner](docs/magi-cover-banner.png)
 

@@ -1,0 +1,193 @@
+{
+  "schema_version": 6,
+  "kind": "behavior_preserving",
+  "scope": {
+    "allowed_paths": [
+      "CHANGELOG.md",
+      "README.md",
+      "plugin.yaml",
+      "package.json",
+      "package-lock.json",
+      "docs/hermes-compatibility-matrix.md",
+      "docs/hermes-memory-compatibility.md",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Prepare the Magi 1.8.2 patch-version metadata and dated notes for IPC model-override consent hardening, without changing runtime behavior or publishing a release.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "The plugin manifest, npm test-package metadata and lockfile root entries, README, and current compatibility document titles consistently report version 1.8.2."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "The dated 1.8.2 changelog entry accurately records explicit llm.model_override consent and IPC protocol-v2 rejection of legacy listeners, while preserving 1.8.1 and older history."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "The metadata-only bump does not change runtime behavior or dependencies, and the existing metadata assertion and full test suite pass."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "All authoritative version sources equal 1.8.2 and the existing metadata test verifies their consistency.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "The dated 1.8.2 changelog mentions model-override consent and protocol-v2 legacy-server rejection, and all prior release sections remain intact.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "The full CI test command and coverage gate pass with no runtime or dependency changes.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No runtime/plugin logic, dependency versions, Hermes configuration, credentials, or memory data are changed."
+      },
+      {
+        "id": "INV-2",
+        "statement": "No Git tag or hosted release is created; this request prepares source metadata only."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Version sources disagree, historical release notes are lost, or the 1.8.2 section is absent."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Runtime behavior, dependencies, or a Git tag/hosted release are changed or published."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "The clean baseline is main at 8d342937a76106a3b133d34aa08fd2a105a18bb9 with current metadata version 1.8.1."
+      },
+      {
+        "id": "IN-2",
+        "statement": "The post-1.8.1 IPC-hardening change requires explicit model-override consent and protocol v2."
+      },
+      {
+        "id": "IN-3",
+        "statement": "The current source changelog format uses dated version sections and preserves historical sections."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Consistent 1.8.2 version metadata and dated changelog, validated as behavior-preserving without a tag or hosted release."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If metadata consistency or required tests/coverage fail, do not commit or push the version bump."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "8d342937a76106a3b133d34aa08fd2a105a18bb9",
+    "base_tree": "1710b921e5a9ab5c99b68fab7b674a6871c41692",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "2d051acbe064cb916c929ff8f8562d941d607c28acdd3451d8b92bb611244eb2"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "green_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "bash ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    }
+  }
+}
