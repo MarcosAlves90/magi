@@ -1084,6 +1084,80 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry, loading })
   })
 }
 
+function TransferDropdown({ target, stored, importing, exportMemory, onImportTrigger, importFileInputId }) {
+  const [open, setOpen] = useState(false)
+  const menuId = useId()
+  if (!stored.data) return null
+  return jsxs('div', {
+    className: 'group relative inline-flex',
+    children: [
+      jsx('button', {
+        type: 'button',
+        'aria-expanded': open,
+        'aria-controls': open ? menuId : undefined,
+        onClick: () => setOpen(v => !v),
+        'aria-label': 'Memory transfer options',
+        className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium ${open ? 'border-l-(--ui-accent)' : ''} focus-visible:outline-2 focus-visible:outline-(--ui-accent)`,
+        children: jsxs('span', {
+          className: 'inline-flex items-center gap-1',
+          children: [
+            jsx('svg', { 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24', className: 'size-3.5 shrink-0', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', children: [jsx('path', { d: 'M8 17h8M8 12h8M8 7l4 4-4 4' }, 'arrow')] }),
+            jsx('span', { children: 'Transfer' }),
+            jsx('svg', { 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24', className: 'size-3 shrink-0', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', children: [jsx('path', { d: open ? 'M18 15l-6-6-6 6' : 'M6 9l6 6 6-6' }, 'chevron')] })
+          ]
+        })
+      }),
+      open ? jsx('div', {
+        id: menuId,
+        role: 'menu',
+        'aria-label': 'Memory transfer options',
+        className: 'absolute left-0 top-full z-50 mt-1.5 min-w-52 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-2 shadow-xl',
+        onMouseLeave: () => setOpen(false),
+        children: [
+          jsx('div', { className: 'mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Export' }),
+          jsx('a', {
+            role: 'menuitem',
+            'aria-label': 'Export memory (MEMORY.md)',
+            tabIndex: 0,
+            href: `data:application/json;charset=utf-8,${exportMemory(target)}`,
+            download: `magi-memory-${target}.json`,
+            className: 'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-(--chrome-action-hover) focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+            children: [
+              jsx('svg', { 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24', className: 'size-3.5 shrink-0 text-(--ui-text-tertiary)', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', children: [jsx('path', { d: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3' }, 'download')] }),
+              jsx('span', { children: `Export memory (${target === 'memory' ? 'MEMORY.md' : 'USER.md'})` })
+            ]
+          }),
+          jsx('a', {
+            role: 'menuitem',
+            'aria-label': 'Export both stores (MEMORY.md + USER.md)',
+            tabIndex: 0,
+            href: `data:application/json;charset=utf-8,${exportMemory('both')}`,
+            download: 'magi-memory-both.json',
+            className: 'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-(--chrome-action-hover) focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+            children: [
+              jsx('svg', { 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24', className: 'size-3.5 shrink-0 text-(--ui-text-tertiary)', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', children: [jsx('path', { d: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3' }, 'download')] }),
+              jsx('span', { children: 'Export both stores' })
+            ]
+          }),
+          jsx('div', { className: 'my-1.5 border-t border-(--ui-stroke-secondary)' }),
+          jsx('div', { className: 'mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Import' }),
+          jsxs('button', {
+            type: 'button',
+            role: 'menuitem',
+            disabled: importing,
+            onClick: () => { onImportTrigger(); setOpen(false) },
+            className: 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-(--chrome-action-hover) focus-visible:outline-2 focus-visible:outline-(--ui-accent) disabled:pointer-events-none disabled:opacity-50',
+            children: [
+              jsx('svg', { 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24', className: 'size-3.5 shrink-0 text-(--ui-text-tertiary)', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', children: [jsx('path', { d: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12' }, 'upload')] }),
+              jsx('span', { children: 'Import JSON' })
+            ]
+          })
+        ]
+      }) : null
+    ]
+  }, 'transfer-dropdown')
+}
+
 function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
   const compactViewport = useCompactViewport()
   const [target, setTarget] = useState('memory')
@@ -1650,44 +1724,31 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             'aria-label': 'Memory actions and data handling',
             className: 'flex flex-wrap items-center gap-x-2 gap-y-1',
             children: [
-              jsxs('div', {
-                role: 'group',
-                'aria-label': 'Memory transfer',
-                className: 'flex flex-wrap items-center gap-1',
-                children: [
-                  jsx(ActionTooltipButton, {
-                    as: 'a',
-                    role: 'button',
-                    tooltip: 'Exports may contain private data. The download stays local; Magi does not upload export files.',
-                    'aria-disabled': importing || !stored.data,
-                    tabIndex: importing || !stored.data ? -1 : 0,
-                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
-                    href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory(target)}` : undefined,
-                    download: `magi-memory-${target}.json`, children: `Export ${target}`
-                  }, 'export-target'),
-                  jsx(ActionTooltipButton, {
-                    as: 'a',
-                    role: 'button',
-                    tooltip: 'Both-store exports may contain private data. The download stays local and is not uploaded by Magi.',
-                    'aria-disabled': importing || !stored.data,
-                    tabIndex: importing || !stored.data ? -1 : 0,
-                    className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium hover:bg-(--chrome-action-hover) ${importing || !stored.data ? 'pointer-events-none opacity-50' : ''}`,
-                    href: stored.data && !importing ? `data:application/json;charset=utf-8,${exportMemory('both')}` : undefined,
-                    download: 'magi-memory-both.json', children: 'Export both stores'
-                  }, 'export-both'),
-                  jsx(ActionTooltipButton, {
-                    disabled: importing || !stored.data,
-                    onClick: () => importFileInput.current?.click(),
-                    className: 'px-2 py-1 text-[0.6875rem]',
-                    tooltip: 'Import JSON is previewed first; no memory is written until you confirm.',
-                    children: 'Import JSON'
-                  }, 'import'),
-                  jsx('input', {
-                    ref: importFileInput, type: 'file', accept: 'application/json,.json',
-                    'aria-label': 'Import memory JSON', tabIndex: -1, className: 'sr-only', onChange: previewImportFile
-                  }, 'file')
-                ]
-              }, 'transfer'),
+      jsx('div', {
+        role: 'group',
+        'aria-label': 'Memory transfer',
+        className: 'flex flex-wrap items-center gap-1',
+        children: [
+          jsx(TransferDropdown, {
+            target,
+            stored,
+            importing,
+            exportMemory,
+            onImportTrigger: () => importFileInput.current?.click(),
+            importFileInputId: 'file-import-input'
+          }),
+          jsx('input', {
+            ref: importFileInput,
+            id: 'file-import-input',
+            type: 'file',
+            accept: 'application/json,.json',
+            'aria-label': 'Import memory JSON',
+            tabIndex: -1,
+            className: 'sr-only',
+            onChange: previewImportFile
+          })
+        ]
+      }, 'transfer'),
               jsxs('div', {
                 role: 'group',
                 'aria-label': 'Memory AI actions',
@@ -1763,7 +1824,19 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
             className: 'shrink-0 overflow-auto border-b border-(--ui-stroke-secondary) bg-(--chrome-action-hover) px-4 py-3',
             style: { maxHeight: '40vh', overflowY: 'auto' },
             children: [
-              jsx('h2', { className: 'text-sm font-semibold', children: 'Memory organization suggestions' }),
+              jsxs('div', {
+                className: 'flex flex-wrap items-center gap-2 mb-2',
+                children: [
+                  jsx('h2', { className: 'mr-auto text-sm font-semibold', children: 'Memory organization suggestions' }),
+                  jsx('button', {
+                    type: 'button',
+                    onClick: () => setOrganizationAnalysis(null),
+                    'aria-label': 'Dismiss memory organization suggestions',
+                    className: 'shrink-0 rounded border border-(--ui-stroke-secondary) px-2 py-1 text-xs font-medium text-(--ui-text-secondary) hover:bg-(--ui-bg-elevated) focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+                    children: 'Dismiss'
+                  })
+                ]
+              }),
               jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'AI findings are uncertain suggestions. They have not been applied; possible contradictions may instead reflect dates or context.' }),
               organizationAnalysis.discarded_suggestions
                 ? jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: `${organizationAnalysis.discarded_suggestions} suggestion(s) with unsupported sources were discarded.` })

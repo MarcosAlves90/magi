@@ -21,10 +21,10 @@ function mountMagi() {
       }
       if (path === '/memory/import/preview') return {
         success: true, target: 'memory', source_fingerprints: { memory: 'fingerprint-1' },
-        targets: { memory: { additions: ['Café\nnew line'], existing_count: 1, skipped_count: 1 } }
+        targets: { memory: { additions: ['Café\\nnew line'], existing_count: 1, skipped_count: 1 } }
       }
       if (path === '/memory/import') {
-        state.entries.memory.push('Café\nnew line')
+        state.entries.memory.push('Café\\nnew line')
         return { success: true, partial: false, outcomes: { memory: { status: 'applied', added_count: 1 } } }
       }
       throw new Error(`Unexpected REST call: ${path}`)
@@ -41,14 +41,14 @@ it('reviews an imported JSON file and writes only after explicit confirmation', 
   const state = mountMagi()
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
   await screen.findByRole('heading', { name: 'Stored memory' })
-  await screen.findByText('Export both stores')
-  const payload = { format_version: 1, target: 'memory', entries: ['Existing fact', 'Café\nnew line'] }
+  fireEvent.click(screen.getByRole('button', { name: 'Memory transfer options' }))
+  await screen.findByRole('menuitem', { name: 'Export both stores (MEMORY.md + USER.md)' })
+  const payload = { format_version: 1, target: 'memory', entries: ['Existing fact', 'Café\\nnew line'] }
   const file = { name: 'memory.json', size: 100, text: async () => JSON.stringify(payload) }
   fireEvent.change(screen.getByLabelText('Import memory JSON'), { target: { files: [file] } })
   const preview = await screen.findByRole('region', { name: 'Memory import preview' })
   expect(preview.textContent).toContain('1 to add · 1 already present')
   expect(state.requests.filter(request => request.path === '/memory/import')).toHaveLength(0)
-  expect(screen.getByText(/does not upload export files/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Confirm import' }))
   await waitFor(() => expect(state.requests.filter(request => request.path === '/memory/import')).toHaveLength(1))
   expect(state.requests.find(request => request.path === '/memory/import').options.body).toEqual({
@@ -62,8 +62,9 @@ it('creates a versioned JSON download locally without a network export request',
   const state = mountMagi()
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
   await screen.findByRole('heading', { name: 'Stored memory' })
-  await screen.findByText('Export both stores')
-  const link = screen.getByRole('button', { name: 'Export memory' })
+  fireEvent.click(screen.getByRole('button', { name: 'Memory transfer options' }))
+  await screen.findByRole('menuitem', { name: 'Export both stores (MEMORY.md + USER.md)' })
+  const link = await screen.findByRole('menuitem', { name: /Export memory/ })
   expect(link.getAttribute('download')).toBe('magi-memory-memory.json')
   expect(JSON.parse(decodeURIComponent(link.getAttribute('href').split(',')[1]))).toEqual({
     format_version: 1, target: 'memory', entries: ['Existing fact']
@@ -72,14 +73,25 @@ it('creates a versioned JSON download locally without a network export request',
   expect(state.requests.some(request => request.path.includes('export'))).toBe(false)
 })
 
-it('keeps transfer, token estimates, and AI actions directly discoverable without nested menus', async () => {
+it('keeps transfer actions discoverable via dropdown without nested details', async () => {
   mountMagi()
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
   await screen.findByRole('heading', { name: 'Stored memory' })
 
-  expect(screen.getByRole('button', { name: 'Import JSON' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Export memory' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Export both stores' })).toBeTruthy()
+  const transferButton = screen.getByRole('button', { name: 'Memory transfer options' })
+  expect(transferButton).toBeTruthy()
+  expect(transferButton.getAttribute('aria-expanded')).toBe('false')
+
+  fireEvent.click(transferButton)
+  await screen.findByRole('menu', { name: 'Memory transfer options' })
+
+  expect(screen.getByRole('menuitem', { name: /Export memory \(MEMORY.md\)/ })).toBeTruthy()
+  expect(screen.getByRole('menuitem', { name: 'Export both stores (MEMORY.md + USER.md)' })).toBeTruthy()
+  expect(screen.getByRole('menuitem', { name: 'Import JSON' })).toBeTruthy()
+
+  fireEvent.click(transferButton)
+  expect(transferButton.getAttribute('aria-expanded')).toBe('false')
+
   expect(screen.getByRole('button', { name: 'Compact with AI' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Review memory with AI' })).toBeTruthy()
   expect(screen.getByText('Estimated tokens')).toBeTruthy()

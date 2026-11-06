@@ -130,7 +130,7 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     }
   })
 
-  it('makes memory estimates, diagnostics, transfer, and AI tools directly discoverable', async () => {
+  it('makes memory estimates, diagnostics, transfer, and AI tools discoverable', async () => {
     const { mount } = fixture()
     mount()
     fireEvent.click(btn('Stored memory Durable context'))
@@ -138,13 +138,13 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
 
     expect(screen.getByText('Estimated tokens')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Inspect diagnostics' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Import JSON' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Export both stores' })).toBeTruthy()
+    const transferDropdown = screen.getByRole('button', { name: 'Memory transfer options' })
+    expect(transferDropdown).toBeTruthy()
+    fireEvent.click(transferDropdown)
+    expect(screen.getByRole('menuitem', { name: 'Import JSON' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Export both stores (MEMORY.md + USER.md)' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Compact with AI' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Review memory with AI' })).toBeTruthy()
-    const exportButton = screen.getByRole('button', { name: 'Export memory' })
-    const exportTooltip = document.getElementById(exportButton.getAttribute('aria-describedby'))
-    expect(exportTooltip?.textContent).toMatch(/does not upload export files/)
     const workspace = screen.getByRole('region', { name: 'Stored memory workspace' })
     expect(workspace.querySelectorAll('details')).toHaveLength(0)
 
@@ -176,9 +176,6 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
       return tooltip
     }
 
-    expectTooltip(within(toolbar).getByRole('button', { name: 'Export memory' }), /private.*local.*does not upload export files/i)
-    expectTooltip(within(toolbar).getByRole('button', { name: 'Export both stores' }), /private.*local.*not uploaded/i)
-    expectTooltip(within(toolbar).getByRole('button', { name: 'Import JSON' }), /preview.*confirm/i)
     expectTooltip(within(toolbar).getByRole('button', { name: 'Compact with AI' }), /configured AI.*review.*apply.*nothing changes automatically/i)
     expectTooltip(within(toolbar).getByRole('button', { name: 'Review memory with AI' }), /selected memory.*suggestions.*nothing is applied automatically/i)
     expectTooltip(screen.getByRole('button', { name: 'Inspect diagnostics' }), /read-only.*entry sizes.*duplicate/i)

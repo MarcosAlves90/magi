@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Reorganized export/import controls into a compact Transfer dropdown (`aria-expanded`/`aria-controls`/`role="menu"`) in Stored memory, freeing toolbar space; Export memory, Export both stores, and Import JSON now live inside one accessible menu. Existing import/export behavior and per-store fingerprint preconditions are unchanged.
+- Added an explicit **Dismiss** button to the organization analysis panel (Review memory with AI), letting users close the panel without taking any decision; bounded-request, no-apply behavior preserved.
+
 ## 1.8.4 — 2026-10-30
 
 - Preserve Hermes' active profile context for LLM requests through the profile-local IPC bridge, ensuring profile-scoped AI actions resolve against the intended context.
