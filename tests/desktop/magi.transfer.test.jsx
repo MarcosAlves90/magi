@@ -123,12 +123,12 @@ it('manages focus and keyboard navigation for the transfer menu', async () => {
 
   // ArrowDown opens menu and focuses first item
   await user.keyboard('{ArrowDown}')
-  const firstItem = screen.getByRole('menuitem', { name: /Export memory/ })
+  const firstItem = await screen.findByRole('menuitem', { name: /Export memory/ })
   expect(firstItem).toBe(document.activeElement)
 
   // Escape closes menu and returns focus to trigger
   await user.keyboard('{Escape}')
-  expect(screen.queryByRole('menu')).toBeNull()
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
   expect(document.activeElement).toBe(trigger)
 })
 
