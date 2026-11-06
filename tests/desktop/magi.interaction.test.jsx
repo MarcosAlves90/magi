@@ -185,10 +185,10 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
   it('activates the real navigation with keyboard Enter and exposes selected state', async () => {
     const { mount } = fixture()
     mount()
-    const user = userEvent.setup()
     const stored = btn('Stored memory Durable context')
     stored.focus()
     expect(document.activeElement).toBe(stored)
+    const user = userEvent.setup()
     await user.keyboard('{Enter}')
     expect(stored.getAttribute('aria-pressed')).toBe('true')
     expect(await screen.findByRole('textbox', { name: 'Edit memory memory entry' })).toBeTruthy()
