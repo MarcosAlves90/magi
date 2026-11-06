@@ -1,0 +1,155 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "scope": {
+    "allowed_paths": [
+      "desktop/plugin.js",
+      "tests/desktop/magi.transfer.test.jsx",
+      "tests/desktop/magi.interaction.test.jsx"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/desktop/magi.transfer.test.jsx",
+      "tests/desktop/magi.interaction.test.jsx"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Reorganizar controles de export/import memories em dropdown Transfer e adicionar botão Dismiss.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Dropdown Transfer com Export memory, Export both stores e Import JSON."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Botão Dismiss em organizationAnalysis."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Testes desktop passam.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Export e import preservam comportamento funcional."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FS-1",
+        "statement": "Não remover controles de export/import existentes."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Plugin desktop/plugin.js existente."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "UI com dropdown Transfer e botão Dismiss."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Em caso de falha, UI retorna ao estado anterior."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "3c08b45466c6d4c5f0047a24175c6734accb9c7e",
+    "base_tree": "d3271ac3aa73f6dee71dc42206f24c55fe25dc0b",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "c6dc0cca6a40794a2bc75fb6f8b0fe650288bdce0ee467f91fefc412b17cdae4"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/desktop-test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/desktop-test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/desktop-test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "Test Files"
+    ]
+  }
+}

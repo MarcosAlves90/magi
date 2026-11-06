@@ -37,7 +37,7 @@ While editing, a draft stays attached to its original entry and store across bac
 
 ## Import and export
 
-Use **Import JSON**, **Export memory/User**, or **Export both stores**. Exports may contain private information; they are assembled locally in the browser and are not uploaded by Magi.
+Use **Transfer** options (**Export memory**, **Export both stores**, or **Import JSON**). Exports may contain private information; they are assembled locally in the browser and are not uploaded by Magi.
 
 Import accepts Magi's JSON format up to 1 MB / 1,000 entries. It previews missing entries against the active character budget and adds them only after confirmation; existing entries are never overwritten. Each target is validated before writes, but writes to multiple targets are separate native batches, not one atomic transaction. Concurrent changes may race between preview and application.
 
@@ -47,7 +47,7 @@ The **History** view is a profile-local audit of mutating actions initiated thro
 
 ## Optional AI review and compaction
 
-AI assistance is explicit and uses the active Hermes model/provider. **Review memory with AI** sends at most 100 entries / 20,000 characters in one request and returns up to 20 source-linked suggestions about duplicates, groupings, possible contradictions, or long entries. Suggestions must cite exact text from every referenced entry; invalid citations are discarded. Findings include uncertainty, are never applied automatically, and errors or oversized stores leave memory unchanged.
+AI assistance is explicit and uses the active Hermes model/provider. **Review memory with AI** sends at most 100 entries / 20,000 characters in one request and returns up to 20 source-linked suggestions about duplicates, groupings, possible contradictions, or long entries. Suggestions must cite exact text from every referenced entry; invalid citations are discarded. Findings include uncertainty, are never applied automatically, can be closed anytime via **Dismiss**, and errors or oversized stores leave memory unchanged.
 
 **Compact with AI** creates a preview for the selected store. Magi accepts only a proposal no larger than 60% of the original character count (at least a 40% reduction) and can retry up to three times. If no safe reduction is available, the store stays unchanged. Nothing is written until **Apply compaction**.
 
