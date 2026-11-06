@@ -1088,11 +1088,14 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
   const [open, setOpen] = useState(false)
   const menuId = useId()
   const triggerRef = useRef(null)
-  const menuRef = useRef(null)
+  const firstItemRef = useRef(null)
 
   useEffect(() => {
-    if (open) menuRef.current?.querySelector('[role="menuitem"]')?.focus()
-    else triggerRef.current?.focus()
+    if (open) {
+      firstItemRef.current?.focus()
+    } else {
+      triggerRef.current?.focus()
+    }
   }, [open])
 
   if (!stored.data) return null
@@ -1132,7 +1135,6 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
         })
       }),
       open ? jsx('div', {
-        ref: menuRef,
         id: menuId,
         role: 'menu',
         'aria-label': 'Memory transfer options',
@@ -1147,6 +1149,7 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
         children: [
           jsx('div', { className: 'mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Export' }),
           jsx('a', {
+            ref: firstItemRef,
             role: 'menuitem',
             'aria-label': `Export memory (${targetLabel})`,
             'aria-disabled': importing,
