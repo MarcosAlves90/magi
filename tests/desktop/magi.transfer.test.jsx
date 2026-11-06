@@ -73,6 +73,64 @@ it('creates a versioned JSON download locally without a network export request',
   expect(state.requests.some(request => request.path.includes('export'))).toBe(false)
 })
 
+it('updates the accessible name and download when the target store changes', async () => {
+  const state = mountMagi()
+  fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
+  await screen.findByRole('heading', { name: 'Stored memory' })
+
+  // Switch to User store
+  fireEvent.click(screen.getByRole('button', { name: /User · 0%/ }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Memory transfer options' }))
+  const link = await screen.findByRole('menuitem', { name: 'Export memory (USER.md)' })
+  expect(link.getAttribute('download')).toBe('magi-memory-user.json')
+  expect(link.getAttribute('aria-label')).toBe('Export memory (USER.md)')
+})
+
+it('disables export actions while an import is in progress', async () => {
+  const state = mountMagi()
+  fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
+  await screen.findByRole('heading', { name: 'Stored memory' })
+
+  // Trigger import to enter importing state
+  const payload = { format_version: 1, target: 'memory', entries: ['New'] }
+  const file = { name: 'm.json', size: 10, text: async () => JSON.stringify(payload) }
+  fireEvent.change(screen.getByLabelText('Import memory JSON'), { target: { files: [file] } })
+  await screen.findByRole('region', { name: 'Memory import preview' })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm import' }))
+
+  // Open transfer menu during pending import
+  fireEvent.click(screen.getByRole('button', { name: 'Memory transfer options' }))
+  const memoryExport = screen.getByRole('menuitem', { name: /Export memory/ })
+  const bothExport = screen.getByRole('menuitem', { name: 'Export both stores (MEMORY.md + USER.md)' })
+
+  expect(memoryExport.getAttribute('aria-disabled')).toBe('true')
+  expect(memoryExport.getAttribute('href')).toBeNull()
+  expect(memoryExport.className).toContain('pointer-events-none')
+  expect(bothExport.getAttribute('aria-disabled')).toBe('true')
+})
+
+it('manages focus and keyboard navigation for the transfer menu', async () => {
+  const state = mountMagi()
+  const user = userEvent.setup()
+  fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
+  await screen.findByRole('heading', { name: 'Stored memory' })
+
+  const trigger = screen.getByRole('button', { name: 'Memory transfer options' })
+  trigger.focus()
+
+  // ArrowDown opens menu and focuses first item
+  await user.keyboard('{ArrowDown}')
+  const firstItem = screen.getByRole('menuitem', { name: /Export memory/ })
+  expect(firstItem).toBe(document.activeElement)
+
+  // Escape closes menu and returns focus to trigger
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+})
+
 it('keeps transfer actions discoverable via dropdown without nested details', async () => {
   mountMagi()
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))

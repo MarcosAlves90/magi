@@ -1087,15 +1087,35 @@ function MemoryDiagnostics({ diagnostics, targetLabel, onSelectEntry, loading })
 function TransferDropdown({ target, stored, importing, exportMemory, onImportTrigger, importFileInputId }) {
   const [open, setOpen] = useState(false)
   const menuId = useId()
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
   if (!stored.data) return null
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setOpen(true)
+      menuRef.current?.querySelector('[role="menuitem"]')?.focus()
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault()
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+  }
+
+  const targetLabel = target === 'memory' ? 'MEMORY.md' : 'USER.md'
+
   return jsxs('div', {
     className: 'group relative inline-flex',
     children: [
       jsx('button', {
+        ref: triggerRef,
         type: 'button',
         'aria-expanded': open,
         'aria-controls': open ? menuId : undefined,
+        'aria-haspopup': 'menu',
         onClick: () => setOpen(v => !v),
+        onKeyDown: handleKeyDown,
         'aria-label': 'Memory transfer options',
         className: `inline-flex items-center rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.6875rem] font-medium ${open ? 'border-l-(--ui-accent)' : ''} focus-visible:outline-2 focus-visible:outline-(--ui-accent)`,
         children: jsxs('span', {
@@ -1108,32 +1128,42 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
         })
       }),
       open ? jsx('div', {
+        ref: menuRef,
         id: menuId,
         role: 'menu',
         'aria-label': 'Memory transfer options',
         className: 'absolute left-0 top-full z-50 mt-1.5 min-w-52 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-2 shadow-xl',
         onMouseLeave: () => setOpen(false),
+        onKeyDown: (e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            setOpen(false)
+            triggerRef.current?.focus()
+          }
+        },
         children: [
           jsx('div', { className: 'mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Export' }),
           jsx('a', {
             role: 'menuitem',
-            'aria-label': 'Export memory (MEMORY.md)',
-            tabIndex: 0,
-            href: `data:application/json;charset=utf-8,${exportMemory(target)}`,
-            download: `magi-memory-${target}.json`,
-            className: 'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-(--chrome-action-hover) focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+            'aria-label': `Export memory (${targetLabel})`,
+            'aria-disabled': importing,
+            tabIndex: importing ? -1 : 0,
+            href: importing ? undefined : `data:application/json;charset=utf-8,${exportMemory(target)}`,
+            download: importing ? undefined : `magi-memory-${target}.json`,
+            className: `flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-(--chrome-action-hover) focus-visible:outline-2 focus-visible:outline-(--ui-accent) ${importing ? 'pointer-events-none opacity-50' : ''}`,
             children: [
               jsx('svg', { 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24', className: 'size-3.5 shrink-0 text-(--ui-text-tertiary)', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', children: [jsx('path', { d: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3' }, 'download')] }),
-              jsx('span', { children: `Export memory (${target === 'memory' ? 'MEMORY.md' : 'USER.md'})` })
+              jsx('span', { children: `Export memory (${targetLabel})` })
             ]
           }),
           jsx('a', {
             role: 'menuitem',
             'aria-label': 'Export both stores (MEMORY.md + USER.md)',
-            tabIndex: 0,
-            href: `data:application/json;charset=utf-8,${exportMemory('both')}`,
-            download: 'magi-memory-both.json',
-            className: 'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-(--chrome-action-hover) focus-visible:outline-2 focus-visible:outline-(--ui-accent)',
+            'aria-disabled': importing,
+            tabIndex: importing ? -1 : 0,
+            href: importing ? undefined : `data:application/json;charset=utf-8,${exportMemory('both')}`,
+            download: importing ? undefined : 'magi-memory-both.json',
+            className: `flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-(--chrome-action-hover) focus-visible:outline-2 focus-visible:outline-(--ui-accent) ${importing ? 'pointer-events-none opacity-50' : ''}`,
             children: [
               jsx('svg', { 'aria-hidden': 'true', focusable: 'false', viewBox: '0 0 24 24', className: 'size-3.5 shrink-0 text-(--ui-text-tertiary)', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', children: [jsx('path', { d: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3' }, 'download')] }),
               jsx('span', { children: 'Export both stores' })
