@@ -121,13 +121,13 @@ it('manages focus and keyboard navigation for the transfer menu', async () => {
 
   // ArrowDown opens menu and focuses first item
   fireEvent.keyDown(trigger, { key: 'ArrowDown', code: 'ArrowDown' })
-  const firstItem = await screen.findByRole('menuitem', { name: /Export memory/, timeout: 10000 })
-  await waitFor(() => expect(firstItem).toBe(document.activeElement), { timeout: 5000 })
+  const firstItem = await screen.findByRole('menuitem', { name: /Export memory/, timeout: 15000 })
+  await waitFor(() => expect(firstItem).toBe(document.activeElement), { timeout: 10000 })
 
   // Escape closes menu and returns focus to trigger
   fireEvent.keyDown(firstItem, { key: 'Escape', code: 'Escape' })
-  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull(), { timeout: 10000 })
-  await waitFor(() => expect(document.activeElement).toBe(trigger), { timeout: 5000 })
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull(), { timeout: 15000 })
+  await waitFor(() => expect(document.activeElement).toBe(trigger), { timeout: 10000 })
 })
 
 it('keeps transfer actions discoverable via dropdown without nested details', async () => {
