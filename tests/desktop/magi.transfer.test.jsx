@@ -124,6 +124,15 @@ it('manages focus and keyboard navigation for the transfer menu', async () => {
   const firstItem = await screen.findByRole('menuitem', { name: /Export memory/, timeout: 15000 })
   await waitFor(() => expect(firstItem).toBe(document.activeElement), { timeout: 10000 })
 
+  // ArrowDown moves focus to second item
+  fireEvent.keyDown(firstItem, { key: 'ArrowDown', code: 'ArrowDown' })
+  const secondItem = await screen.findByRole('menuitem', { name: /Export both stores/, timeout: 15000 })
+  await waitFor(() => expect(secondItem).toBe(document.activeElement), { timeout: 10000 })
+
+  // ArrowUp moves focus back to first item
+  fireEvent.keyDown(secondItem, { key: 'ArrowUp', code: 'ArrowUp' })
+  await waitFor(() => expect(firstItem).toBe(document.activeElement), { timeout: 10000 })
+
   // Escape closes menu and returns focus to trigger
   fireEvent.keyDown(firstItem, { key: 'Escape', code: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull(), { timeout: 15000 })
