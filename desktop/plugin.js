@@ -1089,6 +1089,8 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
   const menuId = useId()
   const triggerRef = useRef(null)
   const firstItemRef = useRef(null)
+  const secondItemRef = useRef(null)
+  const thirdItemRef = useRef(null)
 
   useEffect(() => {
     if (open) {
@@ -1105,6 +1107,24 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
       e.preventDefault()
       setOpen(true)
     } else if (e.key === 'Escape' && open) {
+      e.preventDefault()
+      setOpen(false)
+    }
+  }
+
+  const handleMenuKeyDown = (e) => {
+    const items = [firstItemRef.current, secondItemRef.current, thirdItemRef.current].filter(Boolean)
+    const current = e.target
+    const idx = items.indexOf(current)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      const next = items[(idx + 1) % items.length]
+      next?.focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const prev = items[(idx - 1 + items.length) % items.length]
+      prev?.focus()
+    } else if (e.key === 'Escape') {
       e.preventDefault()
       setOpen(false)
     }
@@ -1140,12 +1160,7 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
         'aria-label': 'Memory transfer options',
         className: 'absolute left-0 top-full z-50 mt-1.5 min-w-52 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-2 shadow-xl',
         onMouseLeave: () => setOpen(false),
-        onKeyDown: (e) => {
-          if (e.key === 'Escape') {
-            e.preventDefault()
-            setOpen(false)
-          }
-        },
+        onKeyDown: handleMenuKeyDown,
         children: [
           jsx('div', { className: 'mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Export' }),
           jsx('a', {
@@ -1163,6 +1178,7 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
             ]
           }),
           jsx('a', {
+            ref: secondItemRef,
             role: 'menuitem',
             'aria-label': 'Export both stores (MEMORY.md + USER.md)',
             'aria-disabled': importing,
@@ -1178,6 +1194,7 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
           jsx('div', { className: 'my-1.5 border-t border-(--ui-stroke-secondary)' }),
           jsx('div', { className: 'mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)', children: 'Import' }),
           jsxs('button', {
+            ref: thirdItemRef,
             type: 'button',
             role: 'menuitem',
             disabled: importing,
