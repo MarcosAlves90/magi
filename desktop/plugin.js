@@ -1089,17 +1089,21 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
   const menuId = useId()
   const triggerRef = useRef(null)
   const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (open) menuRef.current?.querySelector('[role="menuitem"]')?.focus()
+    else triggerRef.current?.focus()
+  }, [open])
+
   if (!stored.data) return null
 
   const handleKeyDown = (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setOpen(true)
-      menuRef.current?.querySelector('[role="menuitem"]')?.focus()
     } else if (e.key === 'Escape' && open) {
       e.preventDefault()
       setOpen(false)
-      triggerRef.current?.focus()
     }
   }
 
@@ -1138,7 +1142,6 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
           if (e.key === 'Escape') {
             e.preventDefault()
             setOpen(false)
-            triggerRef.current?.focus()
           }
         },
         children: [

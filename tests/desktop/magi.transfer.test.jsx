@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import plugin from '../../desktop/plugin.js'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -79,7 +80,7 @@ it('updates the accessible name and download when the target store changes', asy
   await screen.findByRole('heading', { name: 'Stored memory' })
 
   // Switch to User store
-  fireEvent.click(screen.getByRole('button', { name: /User · 0%/ }))
+  fireEvent.click(screen.getByRole('button', { name: /User · 4%/ }))
 
   fireEvent.click(screen.getByRole('button', { name: 'Memory transfer options' }))
   const link = await screen.findByRole('menuitem', { name: 'Export memory (USER.md)' })
