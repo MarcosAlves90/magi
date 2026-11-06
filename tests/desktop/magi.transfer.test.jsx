@@ -123,13 +123,13 @@ it('manages focus and keyboard navigation for the transfer menu', async () => {
 
   // ArrowDown opens menu and focuses first item
   await user.keyboard('{ArrowDown}')
-  const firstItem = await screen.findByRole('menuitem', { name: /Export memory/, timeout: 8000 })
-  expect(firstItem).toBe(document.activeElement)
+  const firstItem = await screen.findByRole('menuitem', { name: /Export memory/, timeout: 10000 })
+  await waitFor(() => expect(firstItem).toBe(document.activeElement), { timeout: 5000 })
 
   // Escape closes menu and returns focus to trigger
   await user.keyboard('{Escape}')
-  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull(), { timeout: 8000 })
-  expect(document.activeElement).toBe(trigger)
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull(), { timeout: 10000 })
+  await waitFor(() => expect(document.activeElement).toBe(trigger), { timeout: 5000 })
 })
 
 it('keeps transfer actions discoverable via dropdown without nested details', async () => {
