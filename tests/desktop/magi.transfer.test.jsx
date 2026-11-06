@@ -1,6 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import plugin from '../../desktop/plugin.js'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -114,7 +113,6 @@ it('disables export actions while an import is in progress', async () => {
 
 it('manages focus and keyboard navigation for the transfer menu', async () => {
   const state = mountMagi()
-  const user = userEvent.setup()
   fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
   await screen.findByRole('heading', { name: 'Stored memory' })
 
@@ -122,12 +120,12 @@ it('manages focus and keyboard navigation for the transfer menu', async () => {
   trigger.focus()
 
   // ArrowDown opens menu and focuses first item
-  await user.keyboard('{ArrowDown}')
+  fireEvent.keyDown(trigger, { key: 'ArrowDown', code: 'ArrowDown' })
   const firstItem = await screen.findByRole('menuitem', { name: /Export memory/, timeout: 10000 })
   await waitFor(() => expect(firstItem).toBe(document.activeElement), { timeout: 5000 })
 
   // Escape closes menu and returns focus to trigger
-  await user.keyboard('{Escape}')
+  fireEvent.keyDown(firstItem, { key: 'Escape', code: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull(), { timeout: 10000 })
   await waitFor(() => expect(document.activeElement).toBe(trigger), { timeout: 5000 })
 })
