@@ -13,7 +13,8 @@ function fixture() {
       { id: 'rec-two', summary: 'Update the beta', action: 'replace', target: 'user', origin: 'auto_review', created_at: 2, target_status: { state: 'ready', can_apply: true } }
     ],
     entries: { memory: ['One durable fact', 'Another fact'], user: ['User preference'] },
-    requests: [], failNext: new Map(), fingerprint: 'fingerprint-1'
+    requests: [], failNext: new Map(), fingerprint: 'fingerprint-1',
+    llmOptions: { providers: [], provider: '', model: '' }, llmSaves: []
   }
   const ctx = {
     source: 'test-profile',
@@ -25,6 +26,13 @@ function fixture() {
         throw new Error('Network unavailable')
       }
       if (path === '/records' && !options.method) return { records: [...state.records], count: state.records.length, issues: [] }
+      if (path === '/llm/options' && !options.method) return { ...state.llmOptions }
+      if (path === '/llm/settings' && options.method === 'PUT') {
+        state.llmSaves.push({ ...options.body })
+        state.llmOptions = { ...state.llmOptions, ...options.body }
+        delete state.llmOptions.legacy_override
+        return { success: true, ...options.body }
+      }
       const detail = path.match(/^\/records\/(.+)$/)
       if (detail && !options.method) {
         const record = state.records.find(record => record.id === decodeURIComponent(detail[1]))
@@ -150,6 +158,20 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Inspect diagnostics' }))
     expect(await screen.findByText(/Entry sizes \(characters\)/)).toBeTruthy()
+  })
+
+  it('shows and clears a legacy model-only override from the profile selector', async () => {
+    const { mount, state } = fixture()
+    state.llmOptions.legacy_override = { provider: '', model: 'old-custom-model' }
+    mount()
+    fireEvent.click(btn('Stored memory Durable context'))
+    await screen.findByRole('heading', { name: 'Stored memory' })
+
+    expect((await screen.findByRole('status')).textContent).toMatch(/Legacy override still active: old-custom-model/)
+    fireEvent.click(screen.getByRole('button', { name: 'Use Hermes defaults' }))
+
+    await waitFor(() => expect(state.llmSaves).toEqual([{ provider: '', model: '' }]))
+    await waitFor(() => expect(screen.queryByText(/Legacy override still active/)).toBeNull())
   })
 
   it('keeps non-obvious memory actions described by accessible tooltips instead of a side notice', async () => {

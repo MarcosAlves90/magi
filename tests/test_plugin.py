@@ -70,6 +70,7 @@ def test_registers_supported_commands(tmp_path):
     assert "memory|user" in ctx.commands["memory-compact-preview"]["args_hint"]
     bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
     assert "_magi_runtime_bridge" not in sys.modules
+    assert bridge.get_plugin_context() is ctx
     assert bridge.get_plugin_llm() is not ctx.llm
     assert len(ctx.unload_callbacks) == 1
     ctx.unload_callbacks[0]()
@@ -110,6 +111,25 @@ def test_runtime_bridge_gates_model_overrides_with_capability_consent():
     finally:
         bridge.clear_plugin_context(granted_ctx)
     assert granted_llm.calls[0]["model"] == "provider/compact-model"
+
+
+def test_runtime_bridge_requires_provider_override_consent():
+    plugin = load_plugin()
+    bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
+    llm = FakeLlm([])
+    ctx = FakeCtx(llm=llm, capabilities={"llm.model_override"})
+    bridge.bind_plugin_context(ctx)
+    try:
+        bridge.get_plugin_llm().complete_structured(
+            provider="openai", instructions="Use this provider."
+        )
+    except PermissionError as exc:
+        assert "llm.provider_override" in str(exc)
+    else:
+        raise AssertionError("provider override must be denied without llm.provider_override")
+    finally:
+        bridge.clear_plugin_context(ctx)
+    assert llm.calls == []
 
 
 def test_runtime_bridge_fails_closed_without_capability_probe():
@@ -157,6 +177,12 @@ def test_ipc_denies_model_override_without_consent(tmp_path, monkeypatch):
         "purpose": "test",
     }
     try:
+        try:
+            client.complete_structured(**request, provider="openai", model="provider/compact-model")
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("IPC provider override was not denied without capability consent")
         try:
             client.complete_structured(**request, model="provider/compact-model")
         except RuntimeError:
@@ -361,6 +387,29 @@ def test_compaction_preview_uses_configured_provider_and_model(monkeypatch, tmp_
     assert result["success"] is True
     assert llm.calls[0]["provider"] == "openai"
     assert llm.calls[0]["model"] == "gpt-4.1-mini"
+
+
+def test_saved_empty_compaction_routing_ignores_legacy_overrides(monkeypatch, tmp_path):
+    plugin = load_plugin()
+    llm = FakeLlm(["fact one; fact two detail"])
+    ctx = FakeCtx({
+        "home_override": str(tmp_path),
+        "compaction_routing": {"provider": "", "model": ""},
+        "compaction_provider": "openai",
+        "compaction_model": "gpt-4.1-mini",
+    }, llm=llm)
+    store = FakePreviewStore(memory=[
+        "The first durable fact is fact one and this sentence contains unnecessary explanation.",
+        "The second durable fact is fact two with detail and this sentence repeats unnecessary context.",
+    ])
+    monkeypatch.setattr(plugin, "_memory_store", lambda: store)
+    plugin.register(ctx)
+
+    result = json.loads(ctx.commands["memory-compact-preview"]["handler"]("memory"))
+
+    assert result["success"] is True
+    assert "provider" not in llm.calls[0]
+    assert "model" not in llm.calls[0]
 
 
 def test_compaction_preview_retries_when_first_proposal_does_not_reduce_footprint(monkeypatch, tmp_path):

@@ -30,7 +30,7 @@ Magi brings pending memory proposals and Hermes' durable `MEMORY.md` / `USER.md`
 
 ![Magi human-reviewed memory workflow](docs/magi-memory-workflow.png)
 
-Pending decisions and memory edits use Hermes' native safeguards. AI actions send selected memory through the model/provider configured in Hermes; they do not write automatically.
+Pending decisions and memory edits use Hermes' native safeguards. AI compaction can use the Hermes defaults or a provider/model selected from the active profile's configured lists in **Stored memory**; it never writes automatically.
 
 ## Get started
 
@@ -58,6 +58,6 @@ In Hermes Desktop, enable both **Agent** for your active profile and **Desktop M
 
 - **You decide:** pending-write approvals, edits, imports, and AI compaction apply only after an explicit action.
 - **Hermes persists:** Magi uses Hermes' native memory APIs; it does not edit the stores directly.
-- **Local by design:** Magi makes no direct third-party network calls, launches no shell commands, and collects no telemetry. AI features use Hermes' configured provider.
+- **Local by design:** Magi makes no direct third-party network calls, launches no shell commands, and collects no telemetry. AI features use Hermes' configured provider/model or the profile-scoped compaction override; Hermes retains credentials and enforces consent.
 
 See [Security & privacy](docs/security-and-privacy.md) for the data flow, model-consent requirements, and important concurrency and recovery limits.

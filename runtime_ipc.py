@@ -14,9 +14,10 @@ import struct
 import tempfile
 import threading
 from contextlib import contextmanager
+from contextvars import copy_context
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterator, cast
+from typing import Any, Callable, Iterator, Sequence, cast
 
 
 _PROTOCOL_VERSION = 2
@@ -39,6 +40,7 @@ _ALLOWED_KWARGS = {
     "system_prompt",
     "temperature",
     "purpose",
+    "provider",
     "model",
 }
 _PROFILE_LOCKS_GUARD = threading.Lock()
@@ -232,7 +234,7 @@ def _validate_json_value(value: Any, *, depth: int = 0, nodes: list[int] | None 
     raise ValueError("Structured value is not JSON-compatible.")
 
 
-def _read_request(connection: socket.socket) -> dict[str, Any] | None:
+def _read_request(connection: socket.socket) -> tuple[str, dict[str, Any]] | None:
     data = _receive_all(connection, _MAX_REQUEST_BYTES)
     payload = json.loads(data.decode("utf-8"))
     if not isinstance(payload, dict) or payload.get("version") != _PROTOCOL_VERSION:
@@ -242,6 +244,17 @@ def _read_request(connection: socket.socket) -> dict[str, Any] | None:
         if set(payload) != {"version", "method"}:
             raise ValueError("Invalid IPC probe.")
         return None
+    if method == "set_compaction_routing":
+        if set(payload) != {"version", "method", "provider", "model"}:
+            raise ValueError("Invalid Magi settings request.")
+        provider, model = payload.get("provider"), payload.get("model")
+        if (
+            not isinstance(provider, str) or len(provider) > 256
+            or not isinstance(model, str) or len(model) > 256
+            or bool(provider) != bool(model)
+        ):
+            raise ValueError("Invalid Magi settings request.")
+        return method, {"provider": provider, "model": model}
     if method != "complete_structured" or set(payload) != {"version", "method", "kwargs"}:
         raise ValueError("Unsupported IPC request.")
     kwargs = payload.get("kwargs")
@@ -286,7 +299,9 @@ def _read_request(connection: socket.socket) -> dict[str, Any] | None:
         raise ValueError("Invalid structured LLM request.")
     if "model" in kwargs and (not isinstance(kwargs["model"], str) or len(kwargs["model"]) > 256):
         raise ValueError("Invalid structured LLM request.")
-    return kwargs
+    if "provider" in kwargs and (not isinstance(kwargs["provider"], str) or len(kwargs["provider"]) > 256):
+        raise ValueError("Invalid structured LLM request.")
+    return method, kwargs
 
 
 def _probe_profile_socket(path: Path) -> bool | None:
@@ -365,15 +380,38 @@ class _RequestHandler(socketserver.BaseRequestHandler):
         try:
             if not _same_user_peer(self.request):
                 return
-            kwargs = _read_request(self.request)
-            if kwargs is None:
+            request = _read_request(self.request)
+            if request is None:
                 data = _encode({"ok": True, "protocol": _PROTOCOL_VERSION}, 1024)
                 self.request.sendall(data)
                 return
             server = cast(_ThreadedUnixServer, self.server)
+            method, arguments = request
             with server.llm_lock:
-                result = server.llm.complete_structured(**kwargs)
-            response = _result_payload(result)
+                if method == "complete_structured":
+                    result = server.llm.complete_structured(**arguments)
+                    response = _result_payload(result)
+                elif method == "set_compaction_routing":
+                    if server.plugin_context is None:
+                        raise RuntimeError("Plugin context is unavailable.")
+                    provider, model = arguments["provider"], arguments["model"]
+                    providers = (
+                        server.profile_context.copy().run(server.available_llm_options)
+                        if provider and server.available_llm_options is not None else []
+                    )
+                    if provider and not any(
+                        isinstance(row, dict)
+                        and row.get("id") == provider
+                        and model in row.get("models", [])
+                        for row in providers
+                    ):
+                        raise ValueError("Provider/model is not available in the active profile.")
+                    server.profile_context.copy().run(
+                        server.plugin_context.set_config, "compaction_routing", arguments
+                    )
+                    response = {"ok": True}
+                else:
+                    raise ValueError("Unsupported IPC request.")
             data = _encode(response, _MAX_RESPONSE_BYTES)
         except Exception:
             # Provider exception text may contain private prompt or credential data.
@@ -388,8 +426,17 @@ class _ThreadedUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamSe
     daemon_threads = False
     block_on_close = True
 
-    def __init__(self, path: str, llm: Any):
+    def __init__(
+        self,
+        path: str,
+        llm: Any,
+        plugin_context: Any = None,
+        available_llm_options: Callable[[], Sequence[dict[str, Any]]] | None = None,
+    ):
         self.llm = llm
+        self.plugin_context = plugin_context
+        self.available_llm_options = available_llm_options
+        self.profile_context = copy_context()
         self.llm_lock = threading.Lock()
         self.ready = threading.Event()
         super().__init__(path, _RequestHandler, bind_and_activate=True)
@@ -402,7 +449,13 @@ class _ThreadedUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamSe
 class ProfileLlmServer:
     """Own one private socket listener and remove it when the plugin unloads."""
 
-    def __init__(self, profile_home: Path | str, llm: Any):
+    def __init__(
+        self,
+        profile_home: Path | str,
+        llm: Any,
+        plugin_context: Any = None,
+        available_llm_options: Callable[[], Sequence[dict[str, Any]]] | None = None,
+    ):
         self.profile_home = Path(profile_home).expanduser().resolve()
         self.public_path = self.profile_home / _SOCKET_RELATIVE_PATH
         self.path = profile_socket_path(self.profile_home)
@@ -411,6 +464,8 @@ class ProfileLlmServer:
         self._owns_alias = False
         self._owns_public_link = False
         self.llm = llm
+        self.plugin_context = plugin_context
+        self.available_llm_options = available_llm_options
         self._server: _ThreadedUnixServer | None = None
         self._thread: threading.Thread | None = None
         self._socket_identity: tuple[int, int] | None = None
@@ -499,7 +554,9 @@ class ProfileLlmServer:
                 self._owns_public_link = True
         server = None
         try:
-            server = _ThreadedUnixServer(str(self.path), self.llm)
+            server = _ThreadedUnixServer(
+                str(self.path), self.llm, self.plugin_context, self.available_llm_options,
+            )
             info = self.path.lstat()
             self._socket_identity = (info.st_dev, info.st_ino)
             os.chmod(self.path, 0o600)
@@ -670,3 +727,29 @@ class ProfileLlmClient:
             provider=provider,
             model=model,
         )
+
+    def set_compaction_routing(self, provider: str, model: str) -> None:
+        if (
+            not isinstance(provider, str) or len(provider) > 256
+            or not isinstance(model, str) or len(model) > 256
+            or bool(provider) != bool(model)
+        ):
+            raise ValueError("Invalid Magi LLM settings.")
+        request = _encode({
+            "version": _PROTOCOL_VERSION,
+            "method": "set_compaction_routing",
+            "provider": provider,
+            "model": model,
+        }, 1024)
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.settimeout(self.timeout)
+                connection.connect(str(self.path))
+                connection.sendall(request)
+                connection.shutdown(socket.SHUT_WR)
+                response_data = _receive_all(connection, 1024)
+            response = json.loads(response_data.decode("utf-8"))
+        except Exception:
+            raise RuntimeError("Magi Agent settings bridge is unavailable for this profile.") from None
+        if not isinstance(response, dict) or response != {"ok": True}:
+            raise RuntimeError("Magi Agent could not save LLM settings.")

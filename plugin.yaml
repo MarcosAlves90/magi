@@ -7,6 +7,7 @@ description: "Review pending Hermes memory writes and inspect, add, edit, delete
 license: MIT
 tags: [memory, review, approval, diagnostics]
 capabilities:
+  - llm.provider_override
   - llm.model_override
 config_schema:
   home_override:
@@ -14,11 +15,6 @@ config_schema:
     default: ""
     label: "Hermes home override"
     description: "Optional absolute HERMES_HOME for unusual/custom profile layouts. Leave empty for automatic profile resolution."
-  compaction_model:
-    type: str
-    default: ""
-    label: "Compaction model"
-    description: "Optional Hermes model id for AI compaction. Leave empty to use the active/default model. Overrides require llm.model_override consent, the host LLM trust gate, and any configured model allowlist; hosts without capability probing deny overrides."
   default_page_size:
     type: int
     default: 20

@@ -1211,7 +1211,7 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
   }, 'transfer-dropdown')
 }
 
-function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
+function StoredMemoryPage({ loadStoredMemory, loadLlmOptions, saveLlmSettings, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
   const compactViewport = useCompactViewport()
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
@@ -1254,6 +1254,12 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
   const [savingLlmSettings, setSavingLlmSettings] = useState(false)
+  const modelOptions = llmOptions.data?.providers?.find(item => item.id === provider)?.models || []
+
+  useEffect(() => {
+    setProvider(llmOptions.data?.provider || '')
+    setModel(llmOptions.data?.model || '')
+  }, [llmOptions.data?.provider, llmOptions.data?.model])
 
   const targetData = stored.data?.targets?.[target] || { count: 0, entries: [] }
   const entries = targetData.entries || []
@@ -1652,6 +1658,20 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     }
   }
 
+  const saveModelSettings = async (nextProvider = provider, nextModel = model) => {
+    setSavingLlmSettings(true)
+    setFeedback(null)
+    try {
+      await saveLlmSettings(nextProvider, nextModel)
+      await llmOptions.refetch()
+      setFeedback({ kind: 'success', message: 'AI provider and model saved for this Hermes profile.' })
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setSavingLlmSettings(false)
+    }
+  }
+
   if (stored.isError) {
     return jsxs('div', {
       className: 'flex h-full flex-col items-center justify-center gap-3 p-8 text-center',
@@ -1781,7 +1801,21 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
               jsx('span', {
                 className: 'basis-full text-[0.6875rem] text-(--ui-text-quaternary)',
                 children: llmOptions.isError ? 'Could not load this profile’s provider list.' : 'Choices come from providers configured for this Hermes profile. Overrides require Hermes consent.'
-              })
+              }),
+              llmOptions.data?.legacy_override ? jsxs('div', {
+                role: 'status',
+                className: 'basis-full flex flex-wrap items-center gap-2 text-[0.6875rem] text-(--ui-text-secondary)',
+                children: [
+                  jsx('span', {
+                    children: `Legacy override still active: ${llmOptions.data.legacy_override.provider ? `${llmOptions.data.legacy_override.provider} / ` : ''}${llmOptions.data.legacy_override.model || 'unknown model'}.`
+                  }),
+                  jsx(ActionButton, {
+                    disabled: savingLlmSettings || llmOptions.isLoading,
+                    onClick: () => saveModelSettings('', ''),
+                    children: savingLlmSettings ? 'Saving…' : 'Use Hermes defaults'
+                  })
+                ]
+              }) : null
             ]
           })
         ]
@@ -2675,6 +2709,11 @@ export default {
     const loadRecords = () => ctx.rest('/records')
     const loadDetail = id => ctx.rest(`/records/${encodeURIComponent(id)}`)
     const loadStoredMemory = () => ctx.rest('/memory')
+    const loadLlmOptions = () => ctx.rest('/llm/options')
+    const saveLlmSettings = (provider, model) => ctx.rest('/llm/settings', {
+      method: 'PUT',
+      body: { provider, model }
+    })
     const loadHistory = filters => {
       const query = new URLSearchParams()
       if (filters.operation) query.set('operation', filters.operation)
@@ -2757,6 +2796,8 @@ export default {
             loadRecords,
             loadDetail,
             loadStoredMemory,
+            loadLlmOptions,
+            saveLlmSettings,
             loadHistory,
             clearHistory,
             saveStoredMemory,

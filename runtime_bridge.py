@@ -23,14 +23,19 @@ class _CapabilityAwareLlm:
 
     def complete_structured(self, **kwargs: Any) -> Any:
         def invoke() -> Any:
-            if kwargs.get("model"):
+            for override, capability in (
+                ("provider", "llm.provider_override"),
+                ("model", "llm.model_override"),
+            ):
+                if not kwargs.get(override):
+                    continue
                 try:
-                    granted = self._ctx.has_capability("llm.model_override")
+                    granted = self._ctx.has_capability(capability)
                 except Exception:
                     granted = False
                 if granted is not True:
                     raise PermissionError(
-                        "Magi model overrides require the llm.model_override capability."
+                        f"Magi {override} overrides require the {capability} capability."
                     )
             return self._ctx.llm.complete_structured(**kwargs)
 
@@ -52,7 +57,7 @@ def clear_plugin_context(ctx: Any = None) -> None:
 
 
 def get_plugin_llm() -> Any:
-    return get_plugin_context().llm
+    return _CapabilityAwareLlm(get_plugin_context())
 
 
 def get_plugin_context() -> Any:
@@ -60,4 +65,4 @@ def get_plugin_context() -> Any:
         raise RuntimeError(
             "Magi Agent context is unavailable; enable the Agent plugin for this profile."
         )
-    return _CapabilityAwareLlm(_plugin_context)
+    return _plugin_context
