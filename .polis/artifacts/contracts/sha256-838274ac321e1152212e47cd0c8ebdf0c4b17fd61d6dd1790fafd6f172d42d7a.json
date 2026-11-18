@@ -1,0 +1,182 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "scope": {
+    "allowed_paths": [
+      "dashboard/plugin_api.py",
+      "desktop/plugin.js",
+      "tests/test_memory_diagnostics.py",
+      "tests/test_desktop.py",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_memory_diagnostics.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Add local, deterministic, per-store memory diagnostics and manual entry navigation without AI calls or automatic mutations.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Calculate exact entry counts, used/remaining character counts, long entry indices, exact duplicate groups and an explicit size distribution for each Hermes memory target."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Expose informative size and duplication findings with per-entry navigation in Desktop and no automated deletion, compaction or LLM use."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Handle empty stores, zero character budgets and Unicode safely; label heuristics as indicative, not as objective quality ratings."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Regression checks known fixtures against exact deterministic metrics for both memory and user including Unicode, duplicates, empty entries and zero budgets.",
+        "requirements": [
+          "REQ-1",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Desktop navigation contract exposes links to long/duplicate entries and visibly documents informational estimates without automatic mutations or model requests.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No direct memory file mutation; existing Hermes MemoryStore methods and compaction-save semantics stay unchanged."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Diagnostic counts use Python codepoint lengths and existing store-reported character budgets without sending content to external AI."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Diagnostic observations trigger write, compaction or AI operations."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Nonsemantic exact duplicate metrics are represented as objective quality/contradiction proof."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "GET /memory store entries, Hermes _char_count and _char_limit metadata."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Read-only diagnostics object per memory target and navigable UI entries."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Zero and negative budgets clamp remaining capacity to zero; Unicode and invalid sizes do not crash diagnostic calculation."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "681ffe1639844fd040b0d1eab9368a8e9ee56241",
+    "base_tree": "59d4a39fb9b41d88a068451d009e23a394442c11",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "b20fb6af3e0ed0362de25238472ca50b24e2fe116101d90c6276fe9996fb257d"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_memory_diagnostics.py --rootdir=tests"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_memory_diagnostics.py --rootdir=tests"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "uv run --with 'pytest\u003e=8,\u003c10' --with 'fastapi\u003e=0.115,\u003c1' --with 'httpx\u003e=0.27,\u003c1' python -m pytest -q tests/test_memory_diagnostics.py --rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_memory_diagnostics_known_data",
+      "AssertionError"
+    ]
+  }
+}

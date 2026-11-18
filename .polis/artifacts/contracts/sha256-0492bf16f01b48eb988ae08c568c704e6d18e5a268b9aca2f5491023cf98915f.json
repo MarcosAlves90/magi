@@ -1,0 +1,221 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "feat(memory): add reviewed AI organization suggestions (MAGI-017)"
+  },
+  "scope": {
+    "allowed_paths": [
+      "core.py",
+      "dashboard/plugin_api.py",
+      "desktop/plugin.js",
+      "tests/test_memory_organization.py",
+      "tests/desktop/magi.organization.test.jsx",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_memory_organization.py",
+      "tests/desktop/magi.organization.test.jsx"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-017: provide an explicit, read-only AI analysis of selected stored-memory organization with reviewable, source-linked suggestions.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Only an explicit user action for the selected Memory or User target may call the configured ctx.llm; no render, polling, or unrelated operation triggers analysis."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Return structured suggestions for semantic duplicates, related-entry groupings, possible contradictions, and unusually long entries; each includes a reason, exact source-text evidence, uncertainty, and references to existing source entries."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Never mutate memory during analysis or expose automatic apply actions; any future application must use the existing normal preview and explicit confirmation flow."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Reuse the active plugin ctx.llm and existing model permissions, disclose that selected memory is sent to the configured model, and limit the analysis to one bounded request with bounded output."
+      },
+      {
+        "id": "REQ-5",
+        "statement": "Discard suggestions with invalid source references or evidence that is not an exact substring of the referenced source entry."
+      },
+      {
+        "id": "REQ-6",
+        "statement": "AI, parsing, and input-limit failures produce a visible safe error and leave stored memory unchanged."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "The selected-target action makes no model call until clicked; one explicit click makes one structured call and leaves both memory targets unchanged.",
+        "requirements": [
+          "REQ-1",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Valid suggestions display supported types, exact citations, reasons, uncertainty, and source entries; invalid references and quotations are discarded.",
+        "requirements": [
+          "REQ-2",
+          "REQ-5"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Oversized input and model/structured-output errors are visible, do not trigger retries or writes, and do not alter either store.",
+        "requirements": [
+          "REQ-4",
+          "REQ-6"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Analysis is read-only; model output cannot directly add, edit, delete, or compact stored memory."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Only source indexes and evidence verified against the exact analyzed snapshot are returned as suggestions."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Possible contradictions are framed as uncertain findings, never asserted as proven facts."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "An automatic model call, memory mutation, silently truncated analysis input, invalid source citation, or one-click memory application."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "The explicitly selected stored-memory target and its current ordered entries, within documented entry and character limits."
+      },
+      {
+        "id": "IN-2",
+        "statement": "One structured response from the active plugin LLM context, with no retry."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Bounded, source-verified, structured suggestions and safe error status; no mutation request."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Unavailable LLM, invalid model output, oversized data, or unexpected exception fails closed and does not touch memory."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "94f1aaf8e26739f4b534f00acbf180b610b7361b",
+    "base_tree": "ac279007e2436de70901cfdf9eb79db278536480",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "e42e77eb0cdb51649f7b84baf29476c3ce814212755753d6c7ef1a400884aee1"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "verify.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "verify.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "uv",
+        "run",
+        "--with",
+        "pytest\u003e=8,\u003c10",
+        "--with",
+        "fastapi\u003e=0.115,\u003c1",
+        "--with",
+        "httpx\u003e=0.27,\u003c1",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_memory_organization.py",
+        "--rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 360,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "assert 404 == 200"
+    ]
+  }
+}

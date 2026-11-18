@@ -20,7 +20,8 @@ from .core import (
     resolve_hermes_home,
     tokenize,
 )
-from .runtime_bridge import bind_plugin_context, clear_plugin_context
+from .runtime_bridge import bind_plugin_context, clear_plugin_context, get_plugin_llm
+from .runtime_ipc import ProfileLlmServer
 
 
 _MEMORY_CHARS_PER_TOKEN = MEMORY_CHARS_PER_TOKEN
@@ -109,10 +110,8 @@ def _compact_preview(ctx, raw_args: str) -> str:
         model = str(routing.get("model") or ctx.get_config("compaction_model", default="") or "").strip() or None
         provider = str(routing.get("provider") or ctx.get_config("compaction_provider", default="") or "").strip() or None
     except Exception:
-        model = provider = None
-    result = build_memory_compaction_preview(
-        ctx.llm, target, entries, _entry_delimiter(), model=model, provider=provider,
-    )
+        model = None
+    result = build_memory_compaction_preview(get_plugin_llm(), target, entries, _entry_delimiter(), model=model)
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -128,7 +127,17 @@ def register(ctx) -> None:
     bind_plugin_context(ctx)
     on_unload = getattr(ctx, "on_unload", None)
     if callable(on_unload):
-        on_unload(lambda: clear_plugin_context(ctx))
+        try:
+            ipc_server = ProfileLlmServer(resolve_hermes_home(), get_plugin_llm()).start()
+        except Exception:
+            ipc_server = None
+
+        def _cleanup() -> None:
+            if ipc_server is not None:
+                ipc_server.stop()
+            clear_plugin_context(ctx)
+
+        on_unload(_cleanup)
 
     ctx.register_command(
         "magi",

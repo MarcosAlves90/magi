@@ -1,0 +1,24 @@
+diff --git a/tests/test_desktop.py b/tests/test_desktop.py
+index 96d47e4c9cc9e4339f7e3a55225fa9a01236c4a6..be16dc061386522efe61b6aab66ae4f710f01948 100644
+--- a/tests/test_desktop.py
++++ b/tests/test_desktop.py
+@@ -358,6 +358,19 @@ def test_readme_version_and_two_accessible_local_screenshots():
+     assert sizes == [(1414, 994), (1414, 994)]
+ 
+ 
++def test_readme_workflow_diagram_is_an_accessible_local_png():
++    readme = (ROOT / "README.md").read_text(encoding="utf-8")
++    assert "![Magi human-reviewed memory workflow](docs/magi-memory-workflow.png)" in readme
++    assert "docs/magi-workflow.svg" not in readme
++
++    image = ROOT / "docs/magi-memory-workflow.png"
++    assert image.is_file()
++    header = image.read_bytes()[:24]
++    assert header[:8] == b"\x89PNG\r\n\x1a\n"
++    assert header[12:16] == b"IHDR"
++    assert struct.unpack(">II", header[16:24]) == (1672, 941)
++
++
+ def test_magi_segmented_selectors_share_clear_active_states():
+     source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+     choice = source.split("function SegmentedChoice", 1)[1].split("function ActionButton", 1)[0]

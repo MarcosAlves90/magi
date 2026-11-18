@@ -1,0 +1,204 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "ci(compat): verify Magi against pinned Hermes release matrix"
+  },
+  "scope": {
+    "allowed_paths": [
+      ".github/workflows/ci.yml",
+      "ci/hermes-compatibility.py",
+      "README.md",
+      "CHANGELOG.md",
+      "docs/hermes-compatibility-matrix.md",
+      "tests/test_hermes_compatibility_matrix.py",
+      "plugin.yaml",
+      "tests/desktop/magi.interaction.test.jsx"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_hermes_compatibility_matrix.py",
+      "tests/desktop/magi.interaction.test.jsx"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-014: exact GitHub release and source refs on isolated GitHub Actions Hermes compatibility matrix for minimum 0.21.5, existing pinned commit, and latest stable v0.22.5 (selected 2026-10-23).",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Matrix contains three checked exact refs: Hermes v0.21.5 release actually tagged v2026.9.24 commit f97608f..., current pinned 517b5e..., latest GitHub stable v0.22.5 commit bf0203a...; never infer v0.21.5 tag."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Each matrix version is independently fetched and installed without source modifications; check git HEAD exact SHA and public MemoryStore APIs through temporary profile, then run same Magi verification and Desktop interaction tests."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Required stable baseline and pinned jobs remain blocking; latest stable is explicitly informative initially; record local installed test evidence, observed failures/limitations and how declared requires_hermes floor is supported."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Wait for asynchronous editor draft state before asserting Save disabled in prior MAGI-012 interaction test, which reproducibly fails in isolated POLIS checkout."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Regression fails when matrix and exact refs missing, and passes when all three verified snapshots and isolated GitHub jobs exist.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Probe runs native Hermes MemoryStore operations for memory and user on temporary profile and reports clear failures; same ./verify.sh and Desktop suite run for each matrix job.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "README and versioned compatibility doc contain precise SHA, release tags, tested functions, observed statuses and missing evidence; no upstream Hermes source edits or Magi version bump.",
+        "requirements": [
+          "REQ-1",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Stored editor regression handles async query selection and CI isolated tests remain stable.",
+        "requirements": [
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Magi version 1.7.8 and all previous 013/020/012 commits stay unchanged; no Hermes source patches."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Use floating Hermes latest at CI runtime, accept missing SHA, or claim 0.21.5 tag exists."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "GitHub official releases/latest 2026-10-23T05:28:45Z tag v0.22.5, remotes refs/tags/v0.22.5^{} bf0203a..., v2026.9.24^{} f97608f..., existing pinned SHA 517b5e..."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Isolated GitHub Actions matrix, native no-real-profile compatibility probe, regression tests and documentation."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Any missing/incorrect SHA or required version missing API fails its job; informational latest failures remain visible and documented."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "1366ea40d03ade29c67bf383db96fb4fe80a9d57",
+    "base_tree": "d757590b1c594cc362b02632e92cebea4046a17c",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "5ba1c5d235efca739433f0f5e17d840c64fa0242ba119f1d4961f90420003c26"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 360,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 360,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "uv",
+        "run",
+        "--with",
+        "pytest\u003e=8,\u003c10",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_hermes_compatibility_matrix.py",
+        "--rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 360,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_hermes_matrix_has_exact_isolated_release_refs"
+    ]
+  }
+}

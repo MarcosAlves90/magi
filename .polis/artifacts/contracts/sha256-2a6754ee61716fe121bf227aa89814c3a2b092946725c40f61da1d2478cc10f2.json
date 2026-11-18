@@ -1,0 +1,183 @@
+{
+  "schema_version": 6,
+  "kind": "behavior_preserving",
+  "scope": {
+    "allowed_paths": [
+      "tests/test_runtime_ipc.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_runtime_ipc.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Make the IPC readiness test independent of the optional TMPDIR environment variable after all CI matrix jobs failed on KeyError: 'TMPDIR', without changing runtime behavior.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "The readiness test explicitly runs with TMPDIR unset and places its Unix socket at a short path inside pytest-managed temporary storage."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "The test continues to verify readiness signaling and cleans up the socket without removing pytest-owned parent directories."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "The full test suite passes both with TMPDIR unset (CI-equivalent) and with the repository's normal local test environment; production code and dependencies are unchanged."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "The readiness test succeeds after removing TMPDIR from its process environment, on all supported CI matrix environments.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "The same full-suite characterization command is Green on the locked baseline and target.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "POLIS full tests and coverage pass, and CI-equivalent full tests pass with TMPDIR absent.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No runtime/plugin logic, dependency versions, Hermes configuration, credentials, or memory data are modified."
+      },
+      {
+        "id": "INV-2",
+        "statement": "No test writes directly to /tmp; temporary socket paths are pytest-managed and bounded for AF_UNIX."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "The test requires TMPDIR or fails because the derived socket path exceeds AF_UNIX path limits."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "The failure is hidden by skipping the test, weakening readiness assertions, or changing production code."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "CI run 40986812812 on commit e98885e697ded4a16e34ca2c2f53a70cd00481a8 failed all three Hermes matrix jobs at the same KeyError: 'TMPDIR' in test_server_readiness_signal_does_not_depend_on_polling."
+      },
+      {
+        "id": "IN-2",
+        "statement": "The CI runner uses pytest-managed tmp_path under /tmp and does not export TMPDIR."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "A portability fix for the readiness test, with no production behavior changes."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If CI-equivalent or full-suite validation fails, do not commit or push the fix."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "e98885e697ded4a16e34ca2c2f53a70cd00481a8",
+    "base_tree": "cf31368bca5d431971989709401f64c2a54a26c9",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "81f28de236eb79555400f2b2a0e33e3639a4e65e75433d0f8369fa5360397ffe"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "TMPDIR='/Users/marcos.lopes/.hermes/profiles/mariupol/cache/scratch' bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "env -u TMPDIR bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "green_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "TMPDIR='/Users/marcos.lopes/.hermes/profiles/mariupol/cache/scratch' bash ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    }
+  }
+}

@@ -1,8 +1,10 @@
 import importlib.util
 import json
 import os
+import struct
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,6 +55,127 @@ def client_for(api):
     app = FastAPI()
     app.include_router(api.router)
     return TestClient(app)
+
+
+def test_backend_agent_context_bridge_load_unload_reload_without_global_alias(monkeypatch, tmp_path):
+    """The real Agent registration must be discoverable by the separate API module."""
+    api = load_api()
+    monkeypatch.setattr(api, "resolve_hermes_home", lambda: tmp_path)
+    for module in tuple(sys.modules.values()):
+        if not getattr(module, "__name__", "").endswith(".runtime_bridge"):
+            continue
+        filename = getattr(module, "__file__", None)
+        if filename and Path(filename).resolve() == (ROOT / "runtime_bridge.py").resolve():
+            module.clear_plugin_context()
+    package = "hermes_plugin_magi_bridge_integration"
+
+    def load_agent():
+        spec = importlib.util.spec_from_file_location(
+            package, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)],
+        )
+        plugin = importlib.util.module_from_spec(spec)
+        sys.modules[package] = plugin
+        spec.loader.exec_module(plugin)
+        return plugin
+
+    def register_agent(plugin):
+        callbacks = []
+        llm = object()
+        ctx = SimpleNamespace(
+            llm=llm,
+            on_unload=callbacks.append,
+            register_command=lambda *args, **kwargs: None,
+            register_cli_command=lambda *args, **kwargs: None,
+        )
+        plugin.register(ctx)
+        return llm, callbacks
+
+    def unload():
+        for name in tuple(sys.modules):
+            if name == package or name.startswith(package + "."):
+                sys.modules.pop(name)
+
+    try:
+        plugin = load_agent()
+        llm, callbacks = register_agent(plugin)
+        assert api._plugin_llm() is not llm
+        assert "_magi_runtime_bridge" not in sys.modules
+        callbacks[0]()
+        with pytest.raises(RuntimeError, match="context is unavailable"):
+            api._plugin_llm()
+
+        unload()
+        plugin = load_agent()
+        replacement, callbacks = register_agent(plugin)
+        assert api._plugin_llm() is not replacement
+        callbacks[0]()
+        unload()
+        with pytest.raises(RuntimeError, match="context is unavailable"):
+            api._plugin_llm()
+    finally:
+        unload()
+
+
+def test_dashboard_ipc_fallback_gates_model_overrides(monkeypatch, tmp_path):
+    api = load_api()
+    monkeypatch.setattr(api, "resolve_hermes_home", lambda: tmp_path)
+    for module in tuple(sys.modules.values()):
+        if not getattr(module, "__name__", "").endswith(".runtime_bridge"):
+            continue
+        filename = getattr(module, "__file__", None)
+        if filename and Path(filename).resolve() == (ROOT / "runtime_bridge.py").resolve():
+            module.clear_plugin_context()
+
+    package = "hermes_plugin_magi_dashboard_fallback_test"
+    spec = importlib.util.spec_from_file_location(
+        package, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)],
+    )
+    assert spec is not None and spec.loader is not None
+    plugin = importlib.util.module_from_spec(spec)
+    sys.modules[package] = plugin
+    spec.loader.exec_module(plugin)
+    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda: tmp_path)
+
+    calls = []
+
+    def complete_structured(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(parsed={"ok": True}, text="{}", provider="fake", model="default")
+
+    callbacks = []
+    ctx = SimpleNamespace(
+        llm=SimpleNamespace(complete_structured=complete_structured),
+        has_capability=lambda capability: False,
+        on_unload=callbacks.append,
+        register_command=lambda *args, **kwargs: None,
+        register_cli_command=lambda *args, **kwargs: None,
+    )
+    plugin.register(ctx)
+    bridge = sys.modules[package + ".runtime_bridge"]
+    bridge.clear_plugin_context(ctx)
+    client = api._plugin_llm()
+    request = {
+        "instructions": "test",
+        "input": [{"type": "text", "text": "synthetic"}],
+        "json_schema": {"type": "object"},
+        "purpose": "test",
+    }
+    try:
+        try:
+            client.complete_structured(**request, model="provider/compact-model")
+        except RuntimeError as exc:
+            assert "request failed" in str(exc)
+        else:
+            raise AssertionError("Dashboard IPC fallback must deny model overrides without capability consent")
+        assert calls == []
+        client.complete_structured(**request)
+        assert len(calls) == 1 and "model" not in calls[0]
+    finally:
+        for callback in callbacks:
+            callback()
+        for name in tuple(sys.modules):
+            if name == package or name.startswith(package + "."):
+                sys.modules.pop(name)
 
 
 def test_unified_desktop_package_uses_documented_surfaces():
@@ -125,6 +248,194 @@ def test_entry_viewers_are_vertically_resizable():
     assert pending_source.count("data-resizable-entry-viewer") >= 1
     assert stored_source.count("data-resizable-entry-viewer") >= 2
     assert "resize-none" not in stored_source
+
+
+def test_stored_memory_layout_groups_metrics_and_toolbar():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
+
+    # The summary has one row of values followed by a full-width budget row.
+    assert "sm:grid-cols-3" in stored
+    assert stored.count("jsx(CompactStat,") == 3
+    first_row = stored.index("label: 'Entries'")
+    second_row = stored.index("label: 'Estimated tokens'")
+    third_row = stored.index("label: 'Characters'")
+    budget = stored.index("children: 'Character budget'")
+    assert first_row < second_row < third_row < budget
+    assert "border-t border-(--ui-stroke-secondary) pt-2" in stored
+    assert "label: 'Entries'" in stored and "detail: targetLabel" in stored
+    assert "label: 'Characters'" in stored and "targetData.char_limit" in stored
+    assert "label: 'Estimated tokens'" in stored and "targetData.estimated_token_limit" in stored
+    assert "jsx(UsageBar, { percent: targetData.usage_percent })" in stored
+    assert "targetData.usage_percent >= 80" in stored
+    assert "Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))" in stored
+    # One search and one action set, directly before the entry list/split pane.
+    assert stored.count("jsx(SearchBox,") == 1
+    assert stored.index("jsx(SearchBox,") < stored.index("jsxs('aside',")
+    assert stored.index("STORED_TARGETS.map") < stored.index("jsxs('aside',")
+    assert stored.index("onClick: beginAdd") < stored.index("jsxs('aside',")
+    assert stored.index("onClick: compact") < stored.index("jsxs('aside',")
+
+
+def test_stored_memory_toolbar_is_responsive_and_accessible():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
+
+    assert "flex flex-wrap items-center gap-2" in stored
+    assert "min-w-48 flex-1" in stored
+    assert "'aria-label': 'Stored memory target'" in stored
+    assert "selected: target === id" in stored
+    assert "focus-visible:outline" in stored
+    assert "ariaLabel: 'Search stored memory'" in stored
+    assert "'aria-live': 'polite'" in stored
+    assert "disabled: compacting || applyingCompaction || saving || deleting" in stored
+    assert "compacting || applyingCompaction || saving || deleting || !targetData.count" in stored
+
+
+def test_magi_workspace_label_and_compaction_icon():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    workspace = source.split("function MagiPage", 1)[1].split("export default", 1)[0]
+    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
+    compact_button = stored.split("jsx(ActionButton, {\n            tone: 'primary'", 1)[1].split("\n          })", 1)[0]
+
+    assert "children: 'Magi Workspace'" in workspace
+    assert "children: 'Memory workspace'" not in workspace
+    assert "selected: mode === id" in workspace
+    assert "onClick: compact" in compact_button
+    assert "disabled: compacting || applyingCompaction || saving || deleting || !targetData.count" in compact_button
+    assert "children: compacting ? 'Compacting…' : 'Compact with AI'" in compact_button
+    assert "className: 'inline-flex items-center gap-1.5'" in compact_button
+    assert "jsx('svg'," in compact_button
+    assert "viewBox: '0 0 24 24'" in compact_button
+    assert "className: 'size-3.5 shrink-0'" in compact_button
+    assert "'aria-hidden': 'true'" in compact_button
+    assert "focusable: 'false'" in compact_button
+    assert "stroke: 'currentColor'" in compact_button
+
+
+def test_readme_version_and_three_accessible_local_screenshots():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    matrix = (ROOT / "docs/hermes-compatibility-matrix.md").read_text(encoding="utf-8")
+    memory_compatibility = (ROOT / "docs/hermes-memory-compatibility.md").read_text(encoding="utf-8")
+    manifest_version = next(
+        line.partition(":")[2].strip() for line in manifest.splitlines()
+        if line.startswith("version:")
+    )
+    current_version = package["version"]
+    assert manifest_version == current_version
+    current_heading = next(
+        (line for line in changelog.splitlines() if line.startswith(f"## {current_version} — ")),
+        None,
+    )
+    assert current_heading is not None
+    if current_version == "1.8.3":
+        assert current_heading == "## 1.8.3 — 2026-10-30"
+    else:
+        date.fromisoformat(current_heading.rsplit(" — ", 1)[1])
+    assert "capabilities:\n  - llm.model_override" in manifest, "manifest must declare llm.model_override"
+    assert package["version"] == current_version
+    assert lock["version"] == current_version
+    assert lock["packages"][""]["version"] == current_version
+    assert f"**Current version:** {current_version}" in readme
+    assert f"# Hermes compatibility checks for Magi {current_version}" in matrix
+    assert f"# Hermes memory compatibility: Magi {current_version}" in memory_compatibility
+    release_182_notes = changelog.split("## 1.8.2 — 2026-10-29", 1)[1].split("## 1.8.1 — 2026-10-26", 1)[0]
+    assert "llm.model_override" in release_182_notes
+    assert "protocol v2" in release_182_notes
+    if current_version == "1.8.3":
+        release_183_notes = changelog.split(f"{current_heading}\n", 1)[1].split("\n## 1.8.2 —", 1)[0]
+        assert "already-loaded record" in release_183_notes
+        assert "documentation" in release_183_notes
+        assert "workflow diagram" in release_183_notes
+        assert "synthetic Desktop screenshots" in release_183_notes
+    if current_version == "1.8.4":
+        release_184_notes = changelog.split(f"{current_heading}\n", 1)[1].split("\n## 1.8.3 —", 1)[0]
+        assert "Hermes' active profile context" in release_184_notes
+        assert "profile-local IPC bridge" in release_184_notes
+    previous_release = changelog.split("## 1.8.0 — 2026-10-23", 1)[1].split("## 1.7.8 —", 1)[0]
+    assert all(f"MAGI-{task}" in previous_release for task in ("001", "009", "011", "015", "019", "020"))
+    assert "## 1.8.0 — 2026-10-23" in changelog
+    assert "## 1.7.8 — 2026-10-17" in changelog
+    assert "docs/screenshots/magi-dashboard.png" not in readme
+
+    screenshots = (
+        ("Pending writes", "pending-writes.png"),
+        ("Stored memory", "stored-memory.png"),
+        ("History", "history.png"),
+    )
+    sizes = []
+    for title, filename in screenshots:
+        relative = f"docs/screenshots/{filename}"
+        assert f"### {title}" in readme
+        assert f"![Magi {title}:" in readme
+        assert f"]({relative})" in readme
+        assert readme.count(f"]({relative})") == 1
+        png = ROOT / relative
+        assert png.is_file()
+        header = png.read_bytes()[:24]
+        assert header[:8] == b"\x89PNG\r\n\x1a\n"
+        assert header[12:16] == b"IHDR"
+        sizes.append(struct.unpack(">II", header[16:24]))
+    assert sizes == [(1414, 994)] * 3
+
+
+def test_readme_workflow_diagram_is_an_accessible_local_png():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "![Magi human-reviewed memory workflow](docs/magi-memory-workflow.png)" in readme
+    assert "docs/magi-workflow.svg" not in readme
+
+    image = ROOT / "docs/magi-memory-workflow.png"
+    assert image.is_file()
+    header = image.read_bytes()[:24]
+    assert header[:8] == b"\x89PNG\r\n\x1a\n"
+    assert header[12:16] == b"IHDR"
+    assert struct.unpack(">II", header[16:24]) == (1672, 941)
+
+
+def test_magi_segmented_selectors_share_clear_active_states():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    choice = source.split("function SegmentedChoice", 1)[1].split("function ActionButton", 1)[0]
+    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
+    workspace = source.split("function MagiPage", 1)[1].split("export default", 1)[0]
+
+    assert source.count("jsx(SegmentedChoice,") == 2
+    assert "type: 'button'" in choice
+    assert "'aria-pressed': selected" in choice
+    assert "disabled" in choice and "onClick" in choice
+    assert "'aria-hidden': 'true'" in choice
+    assert "border-(--ui-accent)" in choice
+    assert "bg-(--ui-bg-primary)" in choice
+    assert "shadow-sm" in choice
+    assert "hover:bg-(--chrome-action-hover)" in choice
+    assert "hover:border-(--ui-stroke-secondary)" in choice
+    assert "focus-visible:outline-2" in choice
+    assert "focus-visible:outline-(--ui-accent)" in choice
+    assert "selected: target === id" in stored
+    assert "selected: mode === id" in workspace
+    assert "onClick: () => selectTarget(id)" in stored
+    assert "onClick: () => selectMode(id)" in workspace
+
+
+def test_magi_segmented_selectors_preserve_navigation_and_compact_toolbar():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
+    workspace = source.split("function MagiPage", 1)[1].split("export default", 1)[0]
+
+    assert "'aria-label': 'Stored memory target'" in stored
+    assert "'aria-label': 'Magi sections'" in workspace
+    assert "STORED_TARGETS.map" in stored
+    assert "'pending', 'Pending writes', 'Review queue'" in workspace
+    assert "'stored', 'Stored memory', 'Durable context'" in workspace
+    assert "disabled: compacting || applyingCompaction || saving || deleting" in stored
+    assert "sm:grid-cols-3" in stored
+    assert "children: 'Character budget'" in stored
+    assert "jsx(SearchBox," in stored
+    assert stored.index("jsx(SearchBox,") < stored.index("jsxs('aside',")
+    assert "onClick: beginAdd" in stored and "onClick: compact" in stored
 
 
 def test_pending_review_filter_only_selects_visible_proposals():
@@ -326,6 +637,173 @@ def test_backend_bulk_decisions_do_not_require_chat_session(monkeypatch, tmp_pat
     assert not list((tmp_path / "pending" / "memory").glob("*.json"))
 
 
+def test_backend_decision_reports_partial_outcome(monkeypatch, tmp_path):
+    stage(tmp_path, "pass", {"action": "add", "target": "memory", "content": "ok"})
+    stage(tmp_path, "fail", {"action": "add", "target": "memory", "content": "denied"}, created=2)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
+    monkeypatch.setattr(
+        api, "_apply_pending_memory",
+        lambda payload, store: {"success": payload["content"] == "ok", "error": "denied"},
+    )
+    response = client_for(api).post("/records/all/decision", json={"action": "approve"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["outcome"] == "partial"
+    assert body["attempted"] == 2
+    assert body["applied"] == 1
+    assert body["rejected"] == 0
+    assert body["failed"] == 1
+    assert {item["id"]: item["status"] for item in body["items"]} == {
+        "pass": "applied", "fail": "failed",
+    }
+    assert "Approved 1" in body["output"]
+    assert (tmp_path / "pending/memory/fail.json").exists()
+    assert not (tmp_path / "pending/memory/pass.json").exists()
+
+
+def test_backend_decision_reports_complete_and_all_failed(monkeypatch, tmp_path):
+    stage(tmp_path, "first", {"action": "add", "target": "memory", "content": "ok"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: {"success": True})
+    client = client_for(api)
+    approved = client.post("/records/all/decision", json={"action": "approve"}).json()
+    assert approved["success"] is True
+    assert approved["outcome"] == "complete"
+    assert (approved["attempted"], approved["applied"], approved["failed"]) == (1, 1, 0)
+
+    stage(tmp_path, "second", {"action": "add", "target": "user", "content": "no"})
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: {"success": False, "error": "unavailable"})
+    failed = client.post("/records/all/decision", json={"action": "approve"}).json()
+    assert failed["success"] is False
+    assert failed["outcome"] == "failed"
+    assert (failed["attempted"], failed["applied"], failed["failed"]) == (1, 0, 1)
+    assert failed["items"][0]["error"] == "unavailable"
+
+
+def test_backend_decision_reports_applied_cleanup_failed(monkeypatch, tmp_path):
+    stage(tmp_path, "cleanup", {"action": "add", "target": "memory", "content": "ok"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: {"success": True})
+    original_unlink = Path.unlink
+
+    def fail_cleanup(path, *args, **kwargs):
+        if path.name == "cleanup.json":
+            raise PermissionError("cleanup denied")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_cleanup)
+    body = client_for(api).post("/records/cleanup/decision", json={"action": "approve"}).json()
+    assert body["success"] is False
+    assert body["outcome"] == "failed"
+    assert body["applied"] == 1
+    assert body["failed"] == 1
+    assert body["items"][0]["status"] == "applied_cleanup_failed"
+    assert "cleanup" in body["items"][0]["error"].lower()
+    assert (tmp_path / "pending/memory/cleanup.json").exists()
+
+
+def test_backend_applied_cleanup_failure_blocks_reapproval_after_reload(monkeypatch, tmp_path):
+    stage(tmp_path, "uncertain", {"action": "add", "target": "memory", "content": "durable"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    store = FakeMemoryStore()
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    native_calls = []
+
+    def apply(payload, active_store):
+        native_calls.append(payload)
+        return active_store.add(payload["target"], payload["content"])
+
+    monkeypatch.setattr(api, "_apply_pending_memory", apply)
+    original_unlink = Path.unlink
+
+    def deny(path, *args, **kwargs):
+        if path.name == "uncertain.json":
+            raise PermissionError("cleanup error")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny)
+    first = client_for(api).post("/records/uncertain/decision", json={"action": "approve"}).json()
+    assert first["items"][0]["status"] == "applied_cleanup_failed"
+    assert len(native_calls) == 1
+
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    monkeypatch.setattr(api, "_apply_pending_memory", apply)
+    status = client_for(api).get("/records").json()["records"][0]["target_status"]
+    assert status["state"] == "reconciliation_required"
+    assert status["can_apply"] is False
+    second = client_for(api).post("/records/uncertain/decision", json={"action": "approve"}).json()
+    assert second["outcome"] == "failed"
+    assert second["items"][0]["status"] == "failed"
+    assert len(native_calls) == 1
+    assert store.memory_entries == ["durable"]
+
+    journal = tmp_path / "plugins" / "magi" / "reconciliation"
+    entries = list(journal.glob("*.json"))
+    assert len(entries) == 1
+    assert "durable" not in entries[0].read_text(encoding="utf-8")
+    assert "content" not in entries[0].read_text(encoding="utf-8")
+
+    monkeypatch.setattr(Path, "unlink", original_unlink)
+    rejected = client_for(api).post("/records/uncertain/decision", json={"action": "reject"}).json()
+    assert rejected["success"] is True
+    assert not list(journal.glob("*.json"))
+
+
+def test_backend_detects_ambiguous_add_that_already_exists(monkeypatch, tmp_path):
+    stage(tmp_path, "duplicate", {"action": "add", "target": "user", "content": "already exists"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(user=["already exists"]))
+    native_calls = []
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: native_calls.append(args))
+    client = client_for(api)
+    status = client.get("/records/duplicate").json()["record"]["target_status"]
+    assert status["state"] == "ambiguous"
+    assert status["can_apply"] is False
+    response = client.post("/records/duplicate/decision", json={"action": "approve"}).json()
+    assert response["outcome"] == "failed"
+    assert native_calls == []
+    assert client.post("/records/duplicate/decision", json={"action": "reject"}).json()["success"] is True
+
+
+def test_backend_decision_reports_partial_rejection(monkeypatch, tmp_path):
+    stage(tmp_path, "keep", {"action": "add", "target": "memory", "content": "a"})
+    stage(tmp_path, "remove", {"action": "add", "target": "memory", "content": "b"}, created=2)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    original_unlink = Path.unlink
+
+    def fail_one(path, *args, **kwargs):
+        if path.name == "keep.json":
+            raise PermissionError("cannot remove proposal")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_one)
+    body = client_for(api).post("/records/all/decision", json={"action": "reject"}).json()
+    assert body["outcome"] == "partial"
+    assert body["success"] is False
+    assert (body["attempted"], body["rejected"], body["failed"]) == (2, 1, 1)
+    assert {item["id"]: item["status"] for item in body["items"]} == {
+        "keep": "failed", "remove": "rejected",
+    }
+
+
+def test_desktop_decision_feedback_observes_partial_outcome():
+    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+    assert "result?.outcome" in source
+    assert "partial" in source
+    assert "kind: 'warning'" in source
+
+
 def test_backend_lists_and_renders_pending_records(monkeypatch, tmp_path):
     stage(
         tmp_path,
@@ -374,6 +852,26 @@ def test_backend_lists_and_renders_pending_records(monkeypatch, tmp_path):
     assert "old" in data["diff"] and "new" in data["diff"]
     assert '"id": "abc123"' in data["raw"]
     assert "OK abc123" in data["verify"]
+
+
+def test_backend_record_detail_loads_pending_queue_once(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    stage(tmp_path, "abc123", {"action": "add", "target": "memory", "content": "new"})
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(memory=["old"]))
+    load_count = 0
+    original_load = api.MagiReview._load
+
+    def count_loads(review):
+        nonlocal load_count
+        load_count += 1
+        return original_load(review)
+
+    monkeypatch.setattr(api.MagiReview, "_load", count_loads)
+    detail = client_for(api).get("/records/abc123")
+
+    assert detail.status_code == 200
+    assert load_count == 1, f"expected one queue read, got {load_count}"
 
 
 class FakeMemoryStore:
@@ -456,6 +954,8 @@ class FakeMemoryStore:
             working = list(entries)
             for operation in operations:
                 if operation["action"] == "remove":
+                    if operation["matched_entry"] not in working:
+                        return {"success": False, "error": "Pinned memory entry is stale. No operations were applied (batch is all-or-nothing)."}
                     working.remove(operation["matched_entry"])
                 elif operation["action"] == "add":
                     if operation["content"] not in working:
@@ -513,6 +1013,77 @@ def test_backend_marks_batch_obsolete_when_any_pinned_target_is_missing(monkeypa
     assert status["destructive_count"] == 2
 
 
+def test_backend_blocks_unverifiable_pending_approvals(monkeypatch, tmp_path):
+    stage(tmp_path, "valid", {"action": "add", "target": "memory", "content": "new"}, created=1)
+    stage(tmp_path, "malformed", {"action": "batch", "target": "memory", "operations": []}, created=2)
+    stage(tmp_path, "no-pin", {"action": "remove", "target": "memory", "old_text": "old"}, created=3)
+    stage(tmp_path, "missing", {"action": "remove", "target": "memory", "old_text": "absent", "matched_entry": "absent"}, created=4)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(memory=["old"]))
+    native_calls = []
+
+    def approve(payload, store):
+        native_calls.append(payload)
+        return {"success": True}
+
+    monkeypatch.setattr(api, "_apply_pending_memory", approve)
+    client = client_for(api)
+    listing = client.get("/records").json()["records"]
+    blocked = {row["id"]: row["target_status"] for row in listing if row["id"] != "valid"}
+    assert all(not state["can_apply"] for state in blocked.values())
+    assert blocked["malformed"]["state"] == "unverifiable"
+
+    result = client.post("/records/all/decision", json={"action": "approve"}).json()
+    assert result["outcome"] == "partial"
+    assert (result["attempted"], result["applied"], result["failed"]) == (4, 1, 3)
+    assert [payload["content"] for payload in native_calls] == ["new"]
+    assert {item["id"]: item["status"] for item in result["items"] if item["status"] == "failed"} == {
+        "malformed": "failed", "no-pin": "failed", "missing": "failed",
+    }
+
+    rejected = client.post("/records/malformed/decision", json={"action": "reject"}).json()
+    assert rejected["outcome"] == "complete"
+    assert rejected["rejected"] == 1
+
+
+def test_backend_status_fail_closed_when_memory_store_unavailable(monkeypatch, tmp_path):
+    stage(tmp_path, "unavailable", {"action": "add", "target": "user", "content": "new"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+
+    def fail_store():
+        raise RuntimeError("private storage path")
+
+    monkeypatch.setattr(api, "_memory_store", fail_store)
+    client = client_for(api)
+    status = client.get("/records").json()["records"][0]["target_status"]
+    assert status["state"] == "unknown"
+    assert status["can_apply"] is False
+    assert "unavailable" in status["message"].lower()
+    result = client.post("/records/unavailable/decision", json={"action": "approve"}).json()
+    assert result["outcome"] == "failed"
+    assert result["failed"] == 1
+    assert (tmp_path / "pending/memory/unavailable.json").exists()
+    assert client.post("/records/unavailable/decision", json={"action": "reject"}).json()["rejected"] == 1
+
+
+def test_backend_native_conflict_after_precheck_is_reported(monkeypatch, tmp_path):
+    stage(tmp_path, "race", {"action": "remove", "target": "memory", "old_text": "old", "matched_entry": "old"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(memory=["old"]))
+    monkeypatch.setattr(
+        api, "_apply_pending_memory",
+        lambda *args: {"success": False, "error": "native pinned entry is stale"},
+    )
+    result = client_for(api).post("/records/race/decision", json={"action": "approve"}).json()
+    assert result["outcome"] == "failed"
+    assert result["items"][0]["status"] == "failed"
+    assert "stale" in result["items"][0]["error"]
+    assert (tmp_path / "pending/memory/race.json").exists()
+
+
 class FakeCompactionLlm:
     def __init__(self, entries=None):
         self.entries = list(entries or ["first fact; second fact"])
@@ -537,6 +1108,12 @@ def test_backend_lists_stored_memory_for_both_targets(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert "estimated_tokens" in body["targets"]["memory"], "token estimate metadata is required"
+    # The established memory summary contract remains unchanged; inspect the
+    # additional read-only diagnostics separately.
+    assert body["targets"]["memory"].pop("diagnostics")["entry_count"] == 2
+    assert body["targets"]["user"].pop("diagnostics")["entry_count"] == 1
+    assert body["targets"]["memory"].pop("source_fingerprint") == api._source_fingerprint(store.memory_entries)
+    assert body["targets"]["user"].pop("source_fingerprint") == api._source_fingerprint(store.user_entries)
     assert body == {
         "targets": {
             "memory": {
@@ -597,6 +1174,77 @@ def test_backend_adds_stored_memory_entry_through_memory_store(monkeypatch):
         {"index": 0, "content": "existing"},
         {"index": 1, "content": "new entry"},
     ]
+
+
+@pytest.mark.parametrize("target", ["memory", "user"])
+def test_backend_rejects_embedded_entry_delimiter_before_native_mutation(monkeypatch, target):
+    api = load_api()
+    store = FakeMemoryStore(memory=["original"], user=["original"])
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    client = client_for(api)
+    invalid = "one\n§\ntwo"
+
+    added = client.post(f"/memory/{target}/entries", json={"content": invalid})
+    replaced = client.put(f"/memory/{target}", json={"old_text": "original", "content": invalid})
+
+    assert added.status_code == 400
+    assert replaced.status_code == 400
+    assert "delimiter" in str(added.json()).lower()
+    assert "delimiter" in str(replaced.json()).lower()
+    assert store.add_calls == []
+    assert store.calls == []
+    assert getattr(store, f"{target}_entries") == ["original"]
+
+
+@pytest.mark.parametrize("target", ["memory", "user"])
+def test_backend_accepts_legitimate_unicode_multiline_entries(monkeypatch, target):
+    api = load_api()
+    store = FakeMemoryStore()
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    content = "primeira linha\n§ separador isolado\n日本語 ✓"
+    response = client_for(api).post(f"/memory/{target}/entries", json={"content": content})
+    assert response.status_code == 200
+    assert getattr(store, f"{target}_entries") == [content]
+
+
+@pytest.mark.parametrize("target", ["memory", "user"])
+def test_backend_rejects_embedded_entry_delimiter_in_compaction(monkeypatch, target):
+    api = load_api()
+    store = FakeMemoryStore(**{target: ["A" * 140]})
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    response = client_for(api).post(
+        f"/memory/{target}/compact",
+        json={"source_fingerprint": api._source_fingerprint(["A" * 140]), "entries": ["a\n§\nb"]},
+    )
+    assert response.status_code == 400
+    assert store.batch_calls == []
+    assert getattr(store, f"{target}_entries") == ["A" * 140]
+
+
+def test_backend_rejects_embedded_entry_delimiter_in_pending_approval(monkeypatch, tmp_path):
+    stage(tmp_path, "bad-delimiter", {"action": "add", "target": "memory", "content": "a\n§\nb"})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    api = load_api()
+    monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore())
+    applied = []
+    monkeypatch.setattr(api, "_apply_pending_memory", lambda *args: applied.append(args))
+    client = client_for(api)
+    response = client.post("/records/bad-delimiter/decision", json={"action": "approve"})
+    assert applied == []
+    assert response.json()["success"] is False
+    assert (tmp_path / "pending/memory/bad-delimiter.json").exists()
+    rejected = client.post("/records/bad-delimiter/decision", json={"action": "reject"})
+    assert rejected.json()["success"] is True
+
+
+def test_backend_reports_preexisting_delimiter_without_mutating(monkeypatch):
+    api = load_api()
+    store = FakeMemoryStore(memory=["legacy\n§\ninvalid"])
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    response = client_for(api).get("/memory")
+    assert response.status_code == 200
+    assert response.json()["targets"]["memory"]["integrity_issues"] == [0]
+    assert store.memory_entries == ["legacy\n§\ninvalid"]
 
 
 def test_backend_deletes_exact_stored_memory_entry_through_memory_store(monkeypatch):
@@ -938,6 +1586,30 @@ def test_backend_applies_compaction_as_one_stale_safe_batch(monkeypatch):
 
 
 @pytest.mark.parametrize("target", ["memory", "user"])
+def test_backend_compaction_never_rebinds_hermes_internal_methods(monkeypatch, target):
+    api = load_api()
+
+    class ProtectedMemoryStore(FakeMemoryStore):
+        def __setattr__(self, name, value):
+            if name == "_mutate":
+                raise AssertionError("Plugin attempted to replace a Hermes internal method")
+            super().__setattr__(name, value)
+
+    store = ProtectedMemoryStore(**{target: ["first longer fact", "second longer fact"]})
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+
+    response = client_for(api).post(
+        f"/memory/{target}/compact",
+        json={"source_fingerprint": api._source_fingerprint(getattr(store, f"{target}_entries")),
+              "entries": ["short fact"]},
+    )
+
+    assert response.status_code == 200
+    assert getattr(store, f"{target}_entries") == ["short fact"]
+    assert "_mutate" not in vars(store)
+
+
+@pytest.mark.parametrize("target", ["memory", "user"])
 @pytest.mark.parametrize("proposed", [
     ["A" * 75],  # 25% reduction misses the advertised 40% minimum.
     ["A" * 61],  # One character over the hard ceiling must also fail.
@@ -989,26 +1661,7 @@ def test_backend_rejects_stale_compaction_without_mutation(monkeypatch):
     assert store.memory_entries == ["newer memory"]
 
 
-def test_backend_refuses_compaction_on_older_hermes_without_atomic_precondition(monkeypatch):
-    api = load_api()
-
-    class LegacyMemoryStore(FakeMemoryStore):
-        def apply_batch(self, target, operations):
-            raise AssertionError("Old unconditional API must never be called")
-
-    store = LegacyMemoryStore(memory=["old first", "old second"])
-    monkeypatch.setattr(api, "_memory_store", lambda: store)
-    response = client_for(api).post(
-        "/memory/memory/compact",
-        json={"source_fingerprint": api._source_fingerprint(store.memory_entries),
-              "entries": ["old facts"]},
-    )
-    assert response.status_code == 409
-    assert "Upgrade Hermes" in str(response.json())
-    assert store.memory_entries == ["old first", "old second"]
-
-
-def test_backend_rejects_concurrent_add_during_native_batch_lock(monkeypatch):
+def test_backend_preserves_concurrent_add_during_native_batch_lock(monkeypatch):
     api = load_api()
 
     class ConcurrentMemoryStore(FakeMemoryStore):
@@ -1027,12 +1680,33 @@ def test_backend_rejects_concurrent_add_during_native_batch_lock(monkeypatch):
         json={"source_fingerprint": fingerprint, "entries": ["old facts"]},
     )
 
+    assert response.status_code == 200
+    assert store.memory_entries == ["new fact from concurrent writer", "old facts"]
+
+
+def test_backend_rejects_concurrent_removal_of_pinned_entry_without_partial_write(monkeypatch):
+    api = load_api()
+
+    class ConcurrentMemoryStore(FakeMemoryStore):
+        def _mutate(self, target, mutate, *, skip_drift=False):
+            self.memory_entries.remove("old first")
+            return super()._mutate(target, mutate, skip_drift=skip_drift)
+
+    store = ConcurrentMemoryStore(memory=["old first", "old second"])
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+
+    response = client_for(api).post(
+        "/memory/memory/compact",
+        json={"source_fingerprint": api._source_fingerprint(store.memory_entries), "entries": ["old facts"]},
+    )
+
     assert response.status_code == 409
-    assert "changed" in str(response.json()).lower()
-    assert store.memory_entries == ["old first", "old second", "new fact from concurrent writer"]
+    assert "stale" in response.json()["detail"]["error"].lower()
+    assert "No operations were applied" in response.json()["detail"]["error"]
+    assert store.memory_entries == ["old second"]
 
 
-def test_compaction_uses_native_hermes_disk_transaction_and_rejects_concurrent_changes(monkeypatch, tmp_path):
+def test_compaction_uses_native_hermes_disk_transaction_and_preserves_concurrent_writes(monkeypatch, tmp_path):
     """Test native on-disk Hermes separately from conftest's Hermes stubs."""
     hermes_root = Path.home() / ".hermes" / "hermes-agent"
     if not (hermes_root / "tools" / "memory_tool_store.py").is_file():
@@ -1062,7 +1736,12 @@ spec = importlib.util.spec_from_file_location("native_hermes_magi_api", api_path
 api = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = api
 spec.loader.exec_module(api)
-store = MemoryStore()
+class ConcurrentAddStore(MemoryStore):
+    def apply_batch(self, target, operations):
+        assert writer.add("memory", "concurrent third fact")["success"]
+        return super().apply_batch(target, operations)
+
+store = ConcurrentAddStore()
 store.load_from_disk()
 api._memory_store = lambda: store
 app = FastAPI()
@@ -1070,27 +1749,42 @@ app.include_router(api.router)
 client = TestClient(app)
 original = api._source_fingerprint(list(store.memory_entries))
 
-# A separate native MemoryStore writes after Magi's first fingerprint check.
-native_mutate = store._mutate
-def write_before_native_lock(target, mutation, *, skip_drift=False):
-    assert writer.add("memory", "concurrent third fact")["success"]
-    return native_mutate(target, mutation, skip_drift=skip_drift)
-store._mutate = write_before_native_lock
+# A second native MemoryStore writes after Magi's initial fingerprint check.
 response = client.post("/memory/memory/compact", json={
     "source_fingerprint": original, "entries": ["old facts"]})
-assert response.status_code == 409, response.text
+assert response.status_code == 200, response.text
 disk = MemoryStore()
 disk.load_from_disk()
-assert disk.memory_entries == ["old first", "old second", "concurrent third fact"]
+assert disk.memory_entries == ["concurrent third fact", "old facts"]
+assert "_mutate" not in vars(store)
 
-del store._mutate
+class ConcurrentRemoveStore(MemoryStore):
+    def apply_batch(self, target, operations):
+        writer.load_from_disk()
+        assert writer.remove("memory", "old facts", matched_entry="old facts")["success"]
+        return super().apply_batch(target, operations)
+
+removing_store = ConcurrentRemoveStore()
+removing_store.load_from_disk()
+api._memory_store = lambda: removing_store
+refreshed = api._source_fingerprint(list(removing_store.memory_entries))
+response = client.post("/memory/memory/compact", json={
+    "source_fingerprint": refreshed, "entries": ["third fact"]})
+assert response.status_code == 409, response.text
+assert "No operations were applied" in response.json()["detail"]["error"]
+disk.load_from_disk()
+assert disk.memory_entries == ["concurrent third fact"]
+assert "_mutate" not in vars(removing_store)
+
+store = MemoryStore()
 store.load_from_disk()
+api._memory_store = lambda: store
 refreshed = api._source_fingerprint(list(store.memory_entries))
 response = client.post("/memory/memory/compact", json={
-    "source_fingerprint": refreshed, "entries": ["all facts"]})
+    "source_fingerprint": refreshed, "entries": ["fact"]})
 assert response.status_code == 200, response.text
 disk.load_from_disk()
-assert disk.memory_entries == ["all facts"]
+assert disk.memory_entries == ["fact"]
 assert "_mutate" not in vars(store)
 '''
     env = {**os.environ, "HERMES_HOME": str(tmp_path),

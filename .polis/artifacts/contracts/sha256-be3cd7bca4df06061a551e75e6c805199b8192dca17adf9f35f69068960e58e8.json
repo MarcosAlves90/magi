@@ -1,0 +1,246 @@
+{
+  "schema_version": 6,
+  "kind": "behavior_preserving",
+  "scope": {
+    "allowed_paths": [
+      "README.md",
+      "docs/index.md",
+      "docs/using-magi.md",
+      "docs/security-and-privacy.md",
+      "docs/development.md",
+      "docs/magi-workflow.svg",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Reorganize Magi documentation so README is a visual product introduction and focused documents cover usage, privacy/security, development, and compatibility without changing runtime behavior or existing release metadata.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Keep README concise and presentation-focused: identify Magi and Hermes compatibility, show the supplied product screenshots, explain installation at a high level, and link to focused documentation."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Move detailed Desktop workflows, commands, configuration options, import/export constraints, history, pending-decision outcomes, and AI preview/apply behavior into a dedicated usage guide without weakening or omitting important safeguards."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Move security and privacy disclosures into a dedicated document that accurately describes local data, native write paths, AI data transmission, the profile-local IPC trust boundary, and known failure/recovery limits."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Move verification, coverage, Desktop test, and compatibility-test procedures into a dedicated development document; retain existing detailed Hermes compatibility documents and make them easy to discover."
+      },
+      {
+        "id": "REQ-5",
+        "statement": "Provide a documentation index and visual workflow diagram using repository-local assets; all README links and images remain valid."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "README presents the current Magi version, tagline, install/enable steps, screenshots, a rendered workflow diagram, essential safeguards, and links to the documentation index; it no longer contains long command/reference or development procedure sections.",
+        "requirements": [
+          "REQ-1",
+          "REQ-5"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "The usage guide covers the existing Desktop flows, commands, settings, import/export limits, pending outcome/reconciliation behavior, and AI compaction/review caveats reflected in the current README.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "The security/privacy document retains accurate local-storage, user-consent, provider-transmission, IPC trust-boundary, and failure disclosures from the current README.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "The development document retains verification/test commands and limitations, and links to the dedicated Hermes compatibility matrix and memory compatibility analysis.",
+        "requirements": [
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-5",
+        "statement": "All local Markdown links and image references in README resolve, both existing required screenshot references remain exactly once, version metadata and runtime files are unchanged, and configured tests plus coverage gates pass.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-3",
+          "REQ-4",
+          "REQ-5"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No runtime behavior, source files, dependencies, package/plugin versions, or existing test assertions are changed."
+      },
+      {
+        "id": "INV-2",
+        "statement": "The two supplied 1414x994 product screenshots remain embedded exactly once each in README under their required Pending writes and Stored memory headings."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Safety limits, uncertainty, consent requirements, and non-atomic/concurrency boundaries are never simplified into stronger guarantees."
+      },
+      {
+        "id": "INV-4",
+        "statement": "Documentation visuals use repository-local assets only; no external tracking images or new runtime dependencies are introduced."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "README remains a dense operational reference instead of an introductory product page, or any specialized details are dropped rather than moved."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Documentation claims automatic AI writes, exactly-once processing, complete atomic snapshot validation, full Hermes compatibility, or guarantees not supported by implementation."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "The change alters application code, tests, versions, changelog, release tags, credentials, or user memory data."
+      },
+      {
+        "id": "FORBID-4",
+        "statement": "A README-local link/image is broken or the supplied screenshot requirements are removed."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "User request: make README presentation-focused, place specific material in separate documents, use more visuals, and push the result."
+      },
+      {
+        "id": "IN-2",
+        "statement": "Clean baseline commit 0438bc6e75d6199a42342d3dc8cdaaab360adc3d; Magi release v1.8.2 is current."
+      },
+      {
+        "id": "IN-3",
+        "statement": "Existing README, CHANGELOG, compatibility documents, product screenshots, plugin behavior, package metadata, and CI workflow."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Concise visual README with local workflow graphic and links to the documentation index."
+      },
+      {
+        "id": "OUT-2",
+        "statement": "Focused usage, security/privacy, development, and documentation-index pages that preserve current technical detail and limits."
+      },
+      {
+        "id": "OUT-3",
+        "statement": "Passing Green-to-Green and configured validation evidence, followed by a commit and push to main as requested."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If documentation links, product claims, screenshot requirements, or configured gates fail, correct the documentation and rerun validation before commit/push."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "If unrelated worktree changes appear or remote main advances incompatibly, preserve the work and stop before overwriting or force-pushing."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "0438bc6e75d6199a42342d3dc8cdaaab360adc3d",
+    "base_tree": "c1898776e3be3fafa39110a93387de01f0fca708",
+    "policy_sha256": "58faac8d898e812c38428bccaee227000fa1bbced1a08fc3f22e7bec7cf4cf64",
+    "specification_sha256": "de57788729ff79586af1c30e8652e60071353ed63b51e8d5adcc2316c41f5998"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "green_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    }
+  }
+}

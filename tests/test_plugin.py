@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,12 +31,13 @@ def load_plugin():
 class FakeCtx:
     profile_name = "default"
 
-    def __init__(self, settings=None, raise_config=False, llm=None):
+    def __init__(self, settings=None, raise_config=False, llm=None, capabilities=None):
         self.settings = settings or {}
         self.raise_config = raise_config
         self.commands = {}
         self.cli_commands = {}
         self.llm = llm
+        self.capabilities = capabilities
         self.unload_callbacks = []
 
     def get_config(self, key, default=None):
@@ -52,6 +54,9 @@ class FakeCtx:
     def on_unload(self, callback):
         self.unload_callbacks.append(callback)
 
+    def has_capability(self, capability):
+        return self.capabilities is None or capability in self.capabilities
+
 
 def test_registers_supported_commands(tmp_path):
     plugin = load_plugin()
@@ -65,8 +70,7 @@ def test_registers_supported_commands(tmp_path):
     assert "memory|user" in ctx.commands["memory-compact-preview"]["args_hint"]
     bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
     assert "_magi_runtime_bridge" not in sys.modules
-    assert bridge.get_plugin_context() is ctx
-    assert bridge.get_plugin_llm() is ctx.llm
+    assert bridge.get_plugin_llm() is not ctx.llm
     assert len(ctx.unload_callbacks) == 1
     ctx.unload_callbacks[0]()
     try:
@@ -75,6 +79,138 @@ def test_registers_supported_commands(tmp_path):
         assert "Agent context is unavailable" in str(exc)
     else:
         raise AssertionError("unload must clear the bound plugin context")
+
+
+def test_runtime_bridge_gates_model_overrides_with_capability_consent():
+    plugin = load_plugin()
+    bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
+    denied_llm = FakeLlm([])
+    denied_ctx = FakeCtx(llm=denied_llm, capabilities=set())
+    bridge.bind_plugin_context(denied_ctx)
+    try:
+        proxy = bridge.get_plugin_llm()
+        try:
+            proxy.complete_structured(model="provider/compact-model")
+        except PermissionError as exc:
+            assert "llm.model_override" in str(exc)
+        else:
+            raise AssertionError("model override must be denied without llm.model_override")
+        assert denied_llm.calls == []
+        proxy.complete_structured(instructions="use the active model")
+        assert len(denied_llm.calls) == 1
+        assert "model" not in denied_llm.calls[0]
+    finally:
+        bridge.clear_plugin_context(denied_ctx)
+
+    granted_llm = FakeLlm([])
+    granted_ctx = FakeCtx(llm=granted_llm, capabilities={"llm.model_override"})
+    bridge.bind_plugin_context(granted_ctx)
+    try:
+        bridge.get_plugin_llm().complete_structured(model="provider/compact-model")
+    finally:
+        bridge.clear_plugin_context(granted_ctx)
+    assert granted_llm.calls[0]["model"] == "provider/compact-model"
+
+
+def test_runtime_bridge_fails_closed_without_capability_probe():
+    plugin = load_plugin()
+    bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
+    llm = FakeLlm([])
+    ctx = SimpleNamespace(llm=llm)
+    bridge.bind_plugin_context(ctx)
+    try:
+        proxy = bridge.get_plugin_llm()
+        try:
+            proxy.complete_structured(model="provider/compact-model")
+        except PermissionError as exc:
+            assert "llm.model_override" in str(exc)
+        else:
+            raise AssertionError("explicit model override must fail closed without capability support")
+        assert llm.calls == []
+        proxy.complete_structured(instructions="use the active model")
+        assert len(llm.calls) == 1
+        assert "model" not in llm.calls[0]
+    finally:
+        bridge.clear_plugin_context(ctx)
+
+
+def test_ipc_denies_model_override_without_consent(tmp_path, monkeypatch):
+    plugin = load_plugin()
+    profile = tmp_path.resolve()
+    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda override="": profile)
+    llm = FakeLlm([])
+    unload_callbacks = []
+    ctx = SimpleNamespace(
+        llm=llm,
+        has_capability=lambda _: False,
+        on_unload=unload_callbacks.append,
+        register_command=lambda *args, **kwargs: None,
+        register_cli_command=lambda *args, **kwargs: None,
+    )
+    plugin.register(ctx)
+    ipc = sys.modules[plugin.__name__ + ".runtime_ipc"]
+    client = ipc.ProfileLlmClient(profile)
+    request = {
+        "instructions": "test",
+        "input": [{"type": "text", "text": "synthetic"}],
+        "json_schema": {"type": "object"},
+        "purpose": "test",
+    }
+    try:
+        try:
+            client.complete_structured(**request, model="provider/compact-model")
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("IPC model override was not denied without capability consent")
+        assert not llm.calls
+        result = client.complete_structured(**request)
+        assert result.parsed["status"] == "compacted"
+        assert len(llm.calls) == 1 and "model" not in llm.calls[0]
+    finally:
+        for callback in unload_callbacks:
+            callback()
+
+
+def test_ipc_preserves_registration_context_for_llm_call(tmp_path, monkeypatch):
+    profile_context = ContextVar("magi_profile_context", default="unset")
+    token = profile_context.set("mariupol")
+    plugin = load_plugin()
+    profile = tmp_path.resolve()
+    monkeypatch.setattr(plugin, "resolve_hermes_home", lambda override="": profile)
+
+    class ContextLlm:
+        def __init__(self):
+            self.context_values = []
+
+        def complete_structured(self, **kwargs):
+            self.context_values.append(profile_context.get())
+            payload = {"status": "compacted", "reason": "", "entries": ["synthetic"]}
+            return SimpleNamespace(
+                parsed=payload,
+                text=json.dumps(payload),
+                provider="test-provider",
+                model="test-model",
+            )
+
+    llm = ContextLlm()
+    ctx = FakeCtx({"home_override": str(profile)}, llm=llm)
+    try:
+        plugin.register(ctx)
+        ipc = sys.modules[plugin.__name__ + ".runtime_ipc"]
+        client = ipc.ProfileLlmClient(profile)
+        result = client.complete_structured(
+            instructions="test",
+            input=[{"type": "text", "text": "synthetic"}],
+            json_schema={"type": "object"},
+            purpose="test",
+        )
+        assert result.parsed["entries"] == ["synthetic"]
+        assert llm.context_values == ["mariupol"]
+    finally:
+        for callback in ctx.unload_callbacks:
+            callback()
+        profile_context.reset(token)
 
 
 class FakeLlm:
@@ -163,6 +299,23 @@ def test_compaction_preview_uses_default_llm_and_returns_reviewable_proposal(mon
     assert "untrusted data" in call["system_prompt"].lower()
     assert "fewest coherent" in call["system_prompt"].lower()
     assert "do not" in call["instructions"].lower()
+
+
+def test_compaction_preview_retries_embedded_entry_delimiter(monkeypatch, tmp_path):
+    plugin = load_plugin()
+    llm = FakeSequenceLlm([["part one\n§\npart two"], ["safe summary"]])
+    ctx = FakeCtx({"home_override": str(tmp_path)}, llm=llm)
+    store = FakePreviewStore(memory=["A" * 140])
+    monkeypatch.setattr(plugin, "_memory_store", lambda: store)
+    plugin.register(ctx)
+
+    result = json.loads(ctx.commands["memory-compact-preview"]["handler"]("memory"))
+
+    assert result["success"] is True
+    assert result["proposed_entries"] == ["safe summary"]
+    assert result["attempts"] == 2
+    assert len(llm.calls) == 2
+    assert store.memory_entries == ["A" * 140]
 
 
 def test_compaction_preview_uses_configured_model(monkeypatch, tmp_path):

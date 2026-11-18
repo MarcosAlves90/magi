@@ -1,0 +1,194 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "test(desktop): cover rendered Magi SDK interactions"
+  },
+  "scope": {
+    "allowed_paths": [
+      "ci/desktop-test.sh",
+      "verify.sh",
+      ".github/workflows/ci.yml",
+      "package.json",
+      "package-lock.json",
+      "vitest.config.mjs",
+      "tests/desktop/magi.interaction.test.jsx",
+      "tests/desktop/sdk.mock.js",
+      "tests/test_desktop_interaction_gate.py",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop_interaction_gate.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-012: run real React DOM user-interaction tests for Magi Desktop via the Hermes SDK style, with mocked SDK and ctx.rest and no services, credentials or real user profile.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Render the unchanged Magi Desktop plugin with a minimal Vitest, React Testing Library and jsdom harness aligned with Hermes Desktop test tooling; no browser or external network used at test runtime."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Assert real user interactions across pending selection/search/refresh/errors, approval/rejection and bulk confirmation, stored editing with stale/error behavior, keyboard controls, compaction preview/cancel/apply; describe absent advanced features as limitations."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Ensure deterministic mocks and CI execution on an explicit Node version, provide reproducible commands and document interactions actually verified."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "New test verifies interaction runner exists and executes live render/user actions, which fails on baseline where harness is absent.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Harness tests selection, filter, REST failures and retries, pending decision confirmation, stored edit/add/delete, and compaction preview/cancel/apply, with meaningful expectations on DOM and outbound mocked REST.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "npm CI lock, local command, verify.sh and CI integration execute deterministically; tests do not contact network or user Hermes stores, and changelog states known gaps.",
+        "requirements": [
+          "REQ-1",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No edits to Hermes, Magi production UI or Python backend; existing 013/020 quality behaviors and version 1.7.8 preserved."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Test interacts with real Hermes credentials, profile, memory files, or external endpoints."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Baseline d6f8cf3 and Hermes Desktop official Vitest + React Testing Library + jsdom conventions."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "React DOM interaction tests, deterministic SDK/REST harness and script, CI setup and README/changelog."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Failed DOM expectation or REST call leads to nonzero test script exit and CI failure; unsupported functionality is documented rather than falsely certified."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "d6f8cf3f0942f8714a57aedb27e4cb6039ee0805",
+    "base_tree": "9bc5ad1ee6b1b8f552eec116373b9b418e2ebc1b",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "88f7f38462d290785d61beacd5b92afd2c7f4db43d4bdbbbf2cb1948bb77e0fa"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 360,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 360,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "uv",
+        "run",
+        "--with",
+        "pytest\u003e=8,\u003c10",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_desktop_interaction_gate.py",
+        "--rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 360,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_desktop_interaction_runner_is_available"
+    ]
+  }
+}

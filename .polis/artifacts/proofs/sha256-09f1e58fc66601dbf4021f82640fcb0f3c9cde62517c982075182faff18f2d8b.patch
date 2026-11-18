@@ -1,0 +1,76 @@
+diff --git a/tests/test_memory_diagnostics.py b/tests/test_memory_diagnostics.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb1af2312497e3156306e755134eb294959a0872
+--- /dev/null
++++ b/tests/test_memory_diagnostics.py
+@@ -0,0 +1,70 @@
++"""Read-only memory-quality diagnostics for both Hermes memory targets."""
++
++from pathlib import Path
++
++from test_desktop import FakeMemoryStore, client_for, load_api
++
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def test_memory_diagnostics_known_data(monkeypatch):
++    api = load_api()
++    memory = ["", "é😀", "é😀", "a" * 121, "x" * 501, "z" * 1001]
++    user = ["", "😀"]
++    store = FakeMemoryStore(memory=memory, user=user, memory_char_limit=2200, user_char_limit=0)
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++
++    response = client_for(api).get("/memory")
++    assert response.status_code == 200
++    data = response.json()["targets"]
++    assert "diagnostics" in data["memory"]
++    memory_diagnostic = data["memory"]["diagnostics"]
++    assert memory_diagnostic == {
++        "method": "deterministic_text_only_v1",
++        "entry_count": 6,
++        "used_chars": len("\n§\n".join(memory)),
++        "remaining_chars": 2200 - len("\n§\n".join(memory)),
++        "over_budget_chars": 0,
++        "long_entry_threshold_chars": 500,
++        "long_entry_indices": [4, 5],
++        "exact_duplicate_groups": [[1, 2]],
++        "size_distribution": {"empty": 1, "1-120": 2, "121-500": 1, "501-1000": 1, ">1000": 1},
++    }
++    user_diagnostic = data["user"]["diagnostics"]
++    assert user_diagnostic["entry_count"] == 2
++    assert user_diagnostic["used_chars"] == len("\n§\n".join(user))
++    assert user_diagnostic["remaining_chars"] == 0
++    assert user_diagnostic["over_budget_chars"] == len("\n§\n".join(user))
++    assert user_diagnostic["size_distribution"]["empty"] == 1
++    assert memory == store.memory_entries and user == store.user_entries
++    assert store.calls == []
++
++
++def test_memory_diagnostics_empty_store_and_zero_budget(monkeypatch):
++    api = load_api()
++    store = FakeMemoryStore(memory=[], user=[], memory_char_limit=0, user_char_limit=0)
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    response = client_for(api).get("/memory")
++    assert response.status_code == 200
++    for target in ("memory", "user"):
++        detail = response.json()["targets"][target]["diagnostics"]
++        assert detail["entry_count"] == detail["remaining_chars"] == detail["over_budget_chars"] == 0
++        assert detail["exact_duplicate_groups"] == detail["long_entry_indices"] == []
++        assert set(detail["size_distribution"].values()) == {0}
++
++
++def test_memory_diagnostics_desktop_navigation_and_informative_label():
++    source = (ROOT / "desktop/plugin.js").read_text(encoding="utf-8")
++    assert "function MemoryDiagnostics(" in source
++    component = source.split("function MemoryDiagnostics(", 1)[1].split("function StoredMemoryPage", 1)[0]
++    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
++    assert "Exact duplicate" in component
++    assert "informational" in component
++    assert "onSelectEntry" in component
++    assert "long_entry_indices" in component
++    assert "exact_duplicate_groups" in component
++    assert "size_distribution" in component
++    assert "jsx(MemoryDiagnostics," in stored
++    assert "setSearch('')" in stored
++    assert "selectEntry(entries[index].content)" in stored

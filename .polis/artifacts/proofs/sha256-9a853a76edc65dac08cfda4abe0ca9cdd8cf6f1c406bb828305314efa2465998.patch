@@ -1,0 +1,62 @@
+diff --git a/tests/test_desktop.py b/tests/test_desktop.py
+index 25a75691ccaa36ba4f56ac807241b7113f88e630..443ebdb50e46b7e35869b131023da214913e58dd 100644
+--- a/tests/test_desktop.py
++++ b/tests/test_desktop.py
+@@ -210,7 +210,7 @@ def test_stored_memory_toolbar_is_responsive_and_accessible():
+     assert "flex flex-wrap items-center gap-2" in stored
+     assert "min-w-48 flex-1" in stored
+     assert "'aria-label': 'Stored memory target'" in stored
+-    assert "'aria-pressed': target === id" in stored
++    assert "selected: target === id" in stored
+     assert "focus-visible:outline" in stored
+     assert "ariaLabel: 'Search stored memory'" in stored
+     assert "'aria-live': 'polite'" in stored
+@@ -218,6 +218,48 @@ def test_stored_memory_toolbar_is_responsive_and_accessible():
+     assert "compacting || applyingCompaction || saving || deleting || !targetData.count" in stored
+ 
+ 
++def test_magi_segmented_selectors_share_clear_active_states():
++    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
++    choice = source.split("function SegmentedChoice", 1)[1].split("function ActionButton", 1)[0]
++    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
++    workspace = source.split("function MagiPage", 1)[1].split("export default", 1)[0]
++
++    assert source.count("jsx(SegmentedChoice,") == 2
++    assert "type: 'button'" in choice
++    assert "'aria-pressed': selected" in choice
++    assert "disabled" in choice and "onClick" in choice
++    assert "'aria-hidden': 'true'" in choice
++    assert "border-(--ui-accent)" in choice
++    assert "bg-(--ui-bg-primary)" in choice
++    assert "shadow-sm" in choice
++    assert "hover:bg-(--chrome-action-hover)" in choice
++    assert "hover:border-(--ui-stroke-secondary)" in choice
++    assert "focus-visible:outline-2" in choice
++    assert "focus-visible:outline-(--ui-accent)" in choice
++    assert "selected: target === id" in stored
++    assert "selected: mode === id" in workspace
++    assert "onClick: () => selectTarget(id)" in stored
++    assert "onClick: () => setMode(id)" in workspace
++
++
++def test_magi_segmented_selectors_preserve_navigation_and_compact_toolbar():
++    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
++    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
++    workspace = source.split("function MagiPage", 1)[1].split("export default", 1)[0]
++
++    assert "'aria-label': 'Stored memory target'" in stored
++    assert "'aria-label': 'Magi sections'" in workspace
++    assert "STORED_TARGETS.map" in stored
++    assert "'pending', 'Pending writes', 'Review queue'" in workspace
++    assert "'stored', 'Stored memory', 'Durable context'" in workspace
++    assert "disabled: compacting || applyingCompaction || saving || deleting" in stored
++    assert "sm:grid-cols-3" in stored
++    assert "children: 'Character budget'" in stored
++    assert "jsx(SearchBox," in stored
++    assert stored.index("jsx(SearchBox,") < stored.index("jsxs('aside',")
++    assert "onClick: beginAdd" in stored and "onClick: compact" in stored
++
++
+ def test_pending_review_filter_only_selects_visible_proposals():
+     source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+     pending = source.split("function PendingWritesPage", 1)[1].split("function StoredMemoryPage", 1)[0]

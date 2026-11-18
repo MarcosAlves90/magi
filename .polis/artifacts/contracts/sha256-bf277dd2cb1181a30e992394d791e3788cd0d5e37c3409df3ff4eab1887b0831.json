@@ -1,0 +1,204 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "fix(pending): reconcile applied proposals without replay (MAGI-004)"
+  },
+  "scope": {
+    "allowed_paths": [
+      "dashboard/plugin_api.py",
+      "desktop/plugin.js",
+      "tests/test_desktop.py",
+      "CHANGELOG.md",
+      "README.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-004: guard pending records that may have been applied even if cleanup failed or a process terminated. Offer conservative recovery and avoid any automatic replay or claims of exactly-once.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "After successful native memory apply, cleanup failure returns applied_cleanup_failed; block repeat approval during same process/session."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Persist minimal content-free Magi-owned reconciliation marker outside pending/memory to recognize the same proposal after restart; use profile-specific scope."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "If a pending add already exists in store but no marker proves why, show ambiguous and refuse approval; allow explicit reject without automatically modifying stored content."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "UI communicates reconciliation and does not offer automatic retry; handle marker persistence errors conservatively and document non-atomic crash windows."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Simulated successful apply then failed unlink cannot invoke native apply again, including fresh API module reload for same profile.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Stored-memory equivalence without marker yields ambiguous status for add, and reject remains accessible.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Marker contains no raw memory and is profile scoped; successful cleanup does not leave lingering marker.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Regressions, verify.sh, POLIS gates pass with honest recovery documentation.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Memory persistence delegated to Hermes public APIs only; Magi-owned metadata outside Hermes pending/memory queue."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Approval remains explicit and no guarantee of exactly-once or rollback."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Automatic repeat approval after known applied_cleanup_failed."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Marker stores memory content, tokens, prompt text, or edits Hermes queue structure."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "TASKS.md MAGI-004 and MAGI-002 applied_cleanup_failed response."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Magi-owned reconciliation journal, guarded approval, status/UI feedback and regressions."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Unknown crash state remains ambiguous; manual review/rejection required; no atomic two-system transaction."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "0f1df0c0fac2b7a156b8a34f44ec4c07cdaa6a97",
+    "base_tree": "312297e02e925892ae8d1cadf4bba3dffe77402c",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "f75bed89a85750e5198cafc5fb1436afbb32e25f96377c51f54372e9df876ba9"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_backend_applied_cleanup_failure_blocks_reapproval_after_reload"
+    ]
+  }
+}

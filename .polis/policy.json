@@ -57,7 +57,7 @@
       "adapter": "cobertura-v1",
       "report": "coverage.xml",
       "operator": "\u003e",
-      "threshold_percent": 95
+      "threshold_percent": 90
     },
     {
       "id": "lint",

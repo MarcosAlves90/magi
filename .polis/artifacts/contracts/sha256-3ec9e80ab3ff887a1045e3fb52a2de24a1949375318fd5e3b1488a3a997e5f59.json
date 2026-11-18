@@ -1,0 +1,199 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "feat(desktop): expose per-record decision report (MAGI-011)"
+  },
+  "scope": {
+    "allowed_paths": [
+      "desktop/plugin.js",
+      "tests/test_desktop_results.py",
+      "CHANGELOG.md",
+      "README.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop_results.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-011: render a collapsible per-record decision results panel, safe error summaries, aggregate counters, navigation to pending records, and only explicit repeat of failed rejections. Retain feedback across Magi tabs.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Render every API item once, with id/status/safe error and separate applied/rejected/failed/reconciliation counts."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Offer selection/navigation only when record remains pending, clearing filters when needed; no automatic mutation or retry."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Offer explicit retry only for a failed reject of a currently pending record; never retry approve or applied_cleanup_failed automatically."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Lift confirmation, result and feedback state to MagiPage so navigating between pending and stored modes preserves them."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Executable tests exercise result normalization, preservation of all item entries, counters, safe errors and retry policy.",
+        "requirements": [
+          "REQ-1",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Desktop code tests verify accessible details panel, selection of pending item and explicit safe retry path.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Component state for confirmation/feedback survives MagiPage navigation; partial/failed not styled as complete.",
+        "requirements": [
+          "REQ-1",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "POLIS strict regression, tests, verification and docs pass.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No writes except previously authorized manual decision. No automatic retry, never treat applied_cleanup_failed as safe to repeat."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Do not display arbitrary raw errors containing sensitive content."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Implicit retry on refresh/re-render, bulk retry of potentially applied operations, or duplicated results."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "TASKS.md MAGI-011 and MAGI-002 decision response fields, MAGI-004 recovery status."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Desktop review result panel, safe retry control, preserved view state, regressions."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Unknown item failures show safe generic message while permitting record inspection."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "0c34729c8d02239f78951bcfb6f54bf5227db069",
+    "base_tree": "72d79ae784f789c21c48074bcf51a1b30b5a8c47",
+    "policy_sha256": "44a3ab3f1522b688168c78834edc78615e35b4969db03a2bd8c09175c1d98b65",
+    "specification_sha256": "c48498fdd6711ff00b03e9b89317af788304e18dba240b17c1e17d17530deb3c"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_desktop_decision_results_safe_normalization_and_retry"
+    ]
+  }
+}

@@ -1,0 +1,207 @@
+diff --git a/tests/desktop/magi.transfer.test.jsx b/tests/desktop/magi.transfer.test.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ef38ebe1e4f6f8aacf3ed947fb2e5e4d613bff7
+--- /dev/null
++++ b/tests/desktop/magi.transfer.test.jsx
+@@ -0,0 +1,71 @@
++import { afterEach, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import plugin from '../../desktop/plugin.js'
++
++afterEach(() => { cleanup(); vi.unstubAllGlobals() })
++
++function mountMagi() {
++  const state = { entries: { memory: ['Existing fact'], user: ['User fact'] }, requests: [] }
++  const ctx = {
++    source: 'transfer-test',
++    registerMany(registrations) { ctx.registrations = registrations },
++    async rest(path, options = {}) {
++      state.requests.push({ path, options })
++      if (path === '/records') return { records: [], count: 0, issues: [] }
++      if (path === '/memory') {
++        const targets = Object.fromEntries(Object.entries(state.entries).map(([id, entries]) => [id, {
++          entries: entries.map((content, index) => ({ content, index })), count: entries.length,
++          used_chars: 20, char_limit: 500, usage_percent: 4, estimated_tokens: 10
++        }]))
++        return { targets }
++      }
++      if (path === '/memory/import/preview') return {
++        success: true, target: 'memory', source_fingerprints: { memory: 'fingerprint-1' },
++        targets: { memory: { additions: ['Café\nnew line'], existing_count: 1, skipped_count: 1 } }
++      }
++      if (path === '/memory/import') {
++        state.entries.memory.push('Café\nnew line')
++        return { success: true, partial: false, outcomes: { memory: { status: 'applied', added_count: 1 } } }
++      }
++      throw new Error(`Unexpected REST call: ${path}`)
++    }
++  }
++  plugin.register(ctx)
++  const route = ctx.registrations.find(item => item.area === 'routes' && item.data.path === '/magi')
++  render(route.render())
++  return state
++}
++
++it('reviews an imported JSON file and writes only after explicit confirmation', async () => {
++  vi.stubGlobal('fetch', () => { throw new Error('Unexpected external network access') })
++  const state = mountMagi()
++  fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
++  await screen.findByText('Export both')
++  const payload = { format_version: 1, target: 'memory', entries: ['Existing fact', 'Café\nnew line'] }
++  const file = { name: 'memory.json', size: 100, text: async () => JSON.stringify(payload) }
++  fireEvent.change(screen.getByLabelText('Import memory JSON'), { target: { files: [file] } })
++  const preview = await screen.findByRole('region', { name: 'Memory import preview' })
++  expect(preview.textContent).toContain('1 to add · 1 already present')
++  expect(state.requests.filter(request => request.path === '/memory/import')).toHaveLength(0)
++  expect(screen.getByText(/does not upload export files/)).toBeTruthy()
++  fireEvent.click(screen.getByRole('button', { name: 'Confirm import' }))
++  await waitFor(() => expect(state.requests.filter(request => request.path === '/memory/import')).toHaveLength(1))
++  expect(state.requests.find(request => request.path === '/memory/import').options.body).toEqual({
++    ...payload, source_fingerprints: { memory: 'fingerprint-1' }, confirmed: true
++  })
++  expect(await screen.findByText('memory: applied (1 added)')).toBeTruthy()
++})
++
++it('creates a versioned JSON download locally without a network export request', async () => {
++  vi.stubGlobal('fetch', () => { throw new Error('Unexpected external network access') })
++  const state = mountMagi()
++  fireEvent.click(screen.getByRole('button', { name: /Stored memory/ }))
++  await screen.findByText('Export both')
++  const link = screen.getByRole('button', { name: 'Export memory' })
++  expect(link.getAttribute('download')).toBe('magi-memory-memory.json')
++  expect(JSON.parse(decodeURIComponent(link.getAttribute('href').split(',')[1]))).toEqual({
++    format_version: 1, target: 'memory', entries: ['Existing fact']
++  })
++  fireEvent.click(link)
++  expect(state.requests.some(request => request.path.includes('export'))).toBe(false)
++})
+diff --git a/tests/test_memory_transfer.py b/tests/test_memory_transfer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9edcc18f840372b35790c60d4b9213fc8598009a
+--- /dev/null
++++ b/tests/test_memory_transfer.py
+@@ -0,0 +1,124 @@
++from test_desktop import FakeMemoryStore, client_for, load_api
++
++
++def _client_with_store(monkeypatch, store):
++    api = load_api()
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    return client_for(api), api
++
++
++def test_import_preview_returns_add_only_diff_without_mutation(monkeypatch):
++    store = FakeMemoryStore(memory=["existing entry"])
++    client, _ = _client_with_store(monkeypatch, store)
++    response = client.post("/memory/import/preview", json={
++        "format_version": 1, "target": "memory", "entries": ["existing entry", "new entry"],
++    })
++    assert response.status_code == 200
++    result = response.json()
++    assert result["success"] is True
++    assert result["additions"] == ["new entry"]
++    assert result["existing_count"] == 1
++    assert store.memory_entries == ["existing entry"]
++    assert store.batch_calls == []
++
++
++def test_import_preview_and_confirm_preserve_unicode_and_multiline(monkeypatch):
++    store = FakeMemoryStore(memory=["existing entry"])
++    client, _ = _client_with_store(monkeypatch, store)
++    payload = {"format_version": 1, "target": "memory", "entries": ["existing entry", "Café\nline two"]}
++    response = client.post("/memory/import/preview", json=payload)
++    assert response.status_code == 200
++    preview = response.json()
++    assert preview["additions"] == ["Café\nline two"]
++    assert preview["skipped_count"] == 1
++    assert store.memory_entries == ["existing entry"]
++    assert store.batch_calls == []
++    applied = client.post("/memory/import", json={
++        **payload, "source_fingerprints": preview["source_fingerprints"], "confirmed": True,
++    })
++    assert applied.status_code == 200
++    assert applied.json()["outcomes"]["memory"]["status"] == "applied"
++    assert store.memory_entries == ["existing entry", "Café\nline two"]
++
++
++def test_import_requires_confirmation_and_rejects_invalid_documents_before_write(monkeypatch):
++    store = FakeMemoryStore(memory=["unchanged"])
++    client, api = _client_with_store(monkeypatch, store)
++    valid = {"format_version": 1, "target": "memory", "entries": ["new"]}
++    response = client.post("/memory/import/preview", json=valid)
++    assert response.status_code == 200
++    preview = response.json()
++    no_confirmation = client.post("/memory/import", json={
++        **valid, "source_fingerprints": preview["source_fingerprints"],
++    })
++    assert no_confirmation.status_code == 400
++    cases = [
++        {**valid, "format_version": 2}, {**valid, "target": "other"},
++        {**valid, "entries": ["dup", "dup"]},
++        {**valid, "entries": ["entry" + api._entry_delimiter() + "injected"]},
++    ]
++    for payload in cases:
++        assert client.post("/memory/import/preview", json=payload).status_code == 400
++    assert store.memory_entries == ["unchanged"]
++    assert store.batch_calls == []
++
++
++def test_import_rejects_payload_size_and_character_budget(monkeypatch):
++    store = FakeMemoryStore(memory=["existing"], memory_char_limit=12)
++    client, _ = _client_with_store(monkeypatch, store)
++    too_large = client.post("/memory/import/preview", json={
++        "format_version": 1, "target": "memory", "entries": ["x" * 1_000_001],
++    })
++    assert too_large.status_code == 413
++    over_budget = client.post("/memory/import/preview", json={
++        "format_version": 1, "target": "memory", "entries": ["budget overflow"],
++    })
++    assert over_budget.status_code == 400
++    assert store.memory_entries == ["existing"]
++    assert store.batch_calls == []
++
++
++def test_import_checks_all_targets_before_mutating_either(monkeypatch):
++    store = FakeMemoryStore(memory=["current"], user=["profile"], user_char_limit=8)
++    client, _ = _client_with_store(monkeypatch, store)
++    payload = {"format_version": 1, "target": "both", "entries": {
++        "memory": ["new memory"], "user": ["too large for user"],
++    }}
++    response = client.post("/memory/import/preview", json=payload)
++    assert response.status_code == 400
++    assert store.memory_entries == ["current"]
++    assert store.user_entries == ["profile"]
++    assert store.batch_calls == []
++
++
++def test_import_rejects_stale_preview_and_reports_partial_multi_target_result(monkeypatch):
++    class PartialStore(FakeMemoryStore):
++        def apply_batch(self, target, operations):
++            if target == "user":
++                self.batch_calls.append((target, operations))
++                return {"success": False, "error": "native batch unavailable"}
++            return super().apply_batch(target, operations)
++
++    store = PartialStore(memory=["memory old"], user=["user old"])
++    client, _ = _client_with_store(monkeypatch, store)
++    payload = {"format_version": 1, "target": "both", "entries": {
++        "memory": ["memory new"], "user": ["user new"],
++    }}
++    response = client.post("/memory/import/preview", json=payload)
++    assert response.status_code == 200
++    preview = response.json()
++    stale = dict(preview["source_fingerprints"], memory="stale")
++    rejected = client.post("/memory/import", json={
++        **payload, "source_fingerprints": stale, "confirmed": True,
++    })
++    assert rejected.status_code == 409
++    assert store.batch_calls == []
++    applied = client.post("/memory/import", json={
++        **payload, "source_fingerprints": preview["source_fingerprints"], "confirmed": True,
++    })
++    assert applied.status_code == 200
++    assert applied.json()["partial"] is True
++    assert applied.json()["outcomes"]["memory"]["status"] == "applied"
++    assert applied.json()["outcomes"]["user"]["status"] == "failed"
++    assert store.memory_entries == ["memory old", "memory new"]
++    assert store.user_entries == ["user old"]

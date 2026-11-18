@@ -1,0 +1,227 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "scope": {
+    "allowed_paths": [
+      "README.md",
+      "tests/test_desktop.py",
+      "docs/magi-memory-workflow.png",
+      "docs/magi-workflow.svg"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Replace the README's SVG workflow diagram with the user's supplied PNG under a clear repository-relative name, preserve its original bytes, and add an enabled-suite regression for the local accessible image reference.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "README uses descriptive non-empty alt text and the repository-relative docs/magi-memory-workflow.png image link, and no longer references the old docs/magi-workflow.svg diagram."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "The PNG in the repository is an unmodified byte-for-byte copy of /Users/marcos.lopes/Downloads/Human-Reviewed Memory Workflow.png (1672x941 RGB PNG)."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "The existing tests/test_desktop.py suite asserts the README image alt/link, local file existence, and PNG signature/dimensions; the obsolete SVG asset is removed."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "No runtime code, version metadata, unrelated documentation, dependencies, or generated image transformations are changed; configured project gates pass."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "The README contains exactly the descriptive relative PNG image link and does not refer to the old SVG.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "The repository asset exists, has the PNG signature, is 1672x941, and cmp plus SHA-256 confirm exact equality with the supplied source file.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "The new README image regression is present in the existing ci/test.sh suite and fails on the clean baseline for the expected missing-image assertion before implementation.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "POLIS workspace validation and all enabled gates pass on the exact target tree; only declared README/test/image paths change.",
+        "requirements": [
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Preserve the user-supplied PNG bytes exactly; do not resize, recompress, recolor, or crop it."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Retain the existing cover and Pending writes / Stored memory screenshots and their test assertions."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Do not change the current version, product/runtime behavior, release history, or dependency graph."
+      },
+      {
+        "id": "INV-4",
+        "statement": "README image paths remain relative and the alt text remains meaningful for screen readers."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "README points to the Downloads path, a remote asset, a missing file, or the obsolete SVG."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "The copied image bytes differ from the supplied source or the new regression test is skipped by ci/test.sh."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "Unrelated source, release metadata, screenshots, tests, or documentation are modified."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "User requests replacing the README workflow graphic with /Users/marcos.lopes/Downloads/Human-Reviewed Memory Workflow.png, renaming it for the repository, and pushing."
+      },
+      {
+        "id": "IN-2",
+        "statement": "Clean main baseline at 77556cc67c094beef336740b1d0b3a99e465f35e; current README references docs/magi-workflow.svg."
+      },
+      {
+        "id": "IN-3",
+        "statement": "Source image is 1672x941 RGB PNG with SHA-256 848d874021a7f0d8d8c9ae3befce01863e180b66ecefa09a5019c7e17d4578d5."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "README displays the supplied workflow infographic from docs/magi-memory-workflow.png with descriptive alt text."
+      },
+      {
+        "id": "OUT-2",
+        "statement": "A regression assertion in tests/test_desktop.py and exact source/asset byte verification protect the image reference and asset."
+      },
+      {
+        "id": "OUT-3",
+        "statement": "Validated commits pushed non-force to main, with final CI and clean remote state verified."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If the regression fails for a dependency/setup reason rather than the expected baseline assertion, stop and repair proof prerequisites; do not claim Red."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "If byte comparison, configured gates, or remote CI fails, do not claim successful delivery; preserve the exact failure and correct or report it."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "77556cc67c094beef336740b1d0b3a99e465f35e",
+    "base_tree": "a9903b016b2d9d47efdcb91ecf5591020de04135",
+    "policy_sha256": "58faac8d898e812c38428bccaee227000fa1bbced1a08fc3f22e7bec7cf4cf64",
+    "specification_sha256": "87158d0a1724580f71342223f935b44f2d31ae78b8c7dfd4da16051010159f0b"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_readme_workflow_diagram_is_an_accessible_local_png"
+    ]
+  }
+}

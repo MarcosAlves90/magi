@@ -1,0 +1,85 @@
+"""Executable and component-level regressions for pending decision result UX."""
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = (ROOT / "desktop/plugin.js").read_text(encoding="utf-8")
+
+
+def evaluate_results(report, records):
+    if shutil.which("node") is None:
+        pytest.skip("Node.js required for executable Desktop result tests")
+    script = r"""
+const fs = require('node:fs')
+const vm = require('node:vm')
+const source = fs.readFileSync('desktop/plugin.js', 'utf8')
+const start = source.indexOf('function normalizeDecisionResult(')
+const end = source.indexOf('const CONTROL_TRANSITION', start)
+if (start < 0 || end <= start) throw Error('Decision result helpers missing')
+const {report, records} = JSON.parse(fs.readFileSync(0, 'utf8'))
+const js = source.slice(start, end) + '\nJSON.stringify({normalized:normalizeDecisionResult(report), retry:report.items.map(item=>canRetryDecisionItem(item,report,records))})'
+process.stdout.write(vm.runInNewContext(js,{report, records, JSON}))
+"""
+    result = subprocess.run(
+        ["node", "-e", script], input=json.dumps({"report": report, "records": records}),
+        text=True, capture_output=True, cwd=ROOT, check=True,
+    )
+    return json.loads(result.stdout)
+
+
+def test_desktop_decision_results_safe_normalization_and_retry():
+    report = {
+        "action": "approve", "outcome": "partial", "applied": 1, "rejected": 0,
+        "failed": 2, "attempted": 3,
+        "items": [
+            {"id": "ok", "status": "applied"},
+            {"id": "failed", "status": "failed", "error": "password=PRIVATE_SECRET"},
+            {"id": "uncertain", "status": "applied_cleanup_failed", "error": "token PRIVATE_SECRET"},
+        ],
+    }
+    result = evaluate_results(report, [{"id": "failed"}, {"id": "uncertain"}])
+    normalized = result["normalized"]
+    assert [item["id"] for item in normalized["items"]] == ["ok", "failed", "uncertain"]
+    assert (normalized["applied"], normalized["failed"], normalized["reconciliation"]) == (1, 2, 1)
+    assert "PRIVATE_SECRET" not in json.dumps(normalized)
+    assert normalized["outcome"] == "partial"
+    assert result["retry"] == [False, False, False]
+
+    reject = {**report, "action": "reject", "items": [
+        {"id": "safe", "status": "failed", "error": "cannot delete"},
+        {"id": "uncertain", "status": "applied_cleanup_failed"},
+        {"id": "ok", "status": "rejected"},
+    ]}
+    assert evaluate_results(reject, [{"id": "safe"}, {"id": "uncertain"}])["retry"] == [
+        True, False, False,
+    ]
+    assert evaluate_results(reject, [])["retry"] == [False, False, False]
+
+
+def test_desktop_decision_panel_is_accessible_and_manual():
+    pending = SOURCE.split("function PendingWritesPage", 1)[1].split("function StoredMemoryPage", 1)[0]
+    assert "DecisionResults" in pending
+    assert "Open pending record" in SOURCE
+    assert "Retry rejection" in SOURCE
+    assert "aria-label': 'Decision results" in SOURCE
+    assert "onClick: () => decide('reject', item.id)" in SOURCE
+    assert "onClick: () => openPendingResult(item.id)" in SOURCE
+    assert "applied_cleanup_failed" in SOURCE
+    assert "setDecisionReport(" in pending
+    assert "setInterval(() => decide" not in SOURCE
+
+
+def test_desktop_decision_feedback_and_confirmation_survive_tab_navigation():
+    root = SOURCE.split("function MagiPage(props)", 1)[1]
+    assert "const [decisionReport, setDecisionReport] = useState(null)" in root
+    assert "const [feedback, setFeedback] = useState(null)" in root
+    assert "const [bulkConfirm, setBulkConfirm] = useState('')" in root
+    assert "decisionReport," in root
+    assert "feedback," in root
+    assert "bulkConfirm," in root

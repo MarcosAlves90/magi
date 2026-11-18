@@ -1,0 +1,41 @@
+"""MAGI-007 dirty drafts, stale polling and navigation guards."""
+import json
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_magi_007_dirty_draft_keeps_text_during_poll_and_flags_conflict():
+    source = (ROOT / 'desktop/plugin.js').read_text()
+    assert 'function resolveStoredDraft(' in source
+    script = """
+const fs=require('fs'),vm=require('vm'),src=fs.readFileSync('desktop/plugin.js','utf8');
+const start=src.indexOf('function resolveStoredDraft('),end=src.indexOf('const CONTROL_TRANSITION',start);
+const fn=vm.runInNewContext(src.slice(start,end)+'\\nresolveStoredDraft');
+const slots={'memory:old':{base:'old',text:'my unsaved text',sourceFingerprint:'before'}};
+console.log(JSON.stringify([fn(slots,'memory:old','old','before'),fn(slots,'memory:old','old','after')]));
+"""
+    response = subprocess.run(['node','-e',script],cwd=ROOT,capture_output=True,text=True,check=True)
+    initial, polled = json.loads(response.stdout)
+    assert initial['dirty'] and not initial['conflict']
+    assert polled['dirty'] and polled['conflict']
+    assert polled['text'] == 'my unsaved text'
+
+
+def test_magi_007_navigation_prompts_and_does_not_autodiscard():
+    source = (ROOT / 'desktop/plugin.js').read_text()
+    stored = source.split('function StoredMemoryPage',1)[1].split('function MagiPage',1)[0]
+    page = source.split('function MagiPage',1)[1].split('export default',1)[0]
+    assert 'draftSlots' in stored
+    assert 'guardNavigation' in stored
+    assert 'pendingNavigation' in stored
+    assert 'Continue editing' in stored
+    assert 'Discard draft' in stored
+    assert 'Save and continue' in stored
+    assert 'Draft source changed' in stored
+    assert 'navigationGuard.current' in stored
+    assert 'navigationGuard.current?.dirty' in page
+    assert 'setPendingNavigation' in stored
+    assert 'disabled: saving || draftConflict' in stored
+    assert "[target, adding, current?.content]" not in stored

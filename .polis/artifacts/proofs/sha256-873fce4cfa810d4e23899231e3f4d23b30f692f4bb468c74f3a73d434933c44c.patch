@@ -1,0 +1,27 @@
+diff --git a/tests/test_desktop.py b/tests/test_desktop.py
+index 78f0d5c572752aaee191e5e8070f89fb1ba872e8..0e2009918f39d95e39bf4a26b0fe4567b249c36d 100644
+--- a/tests/test_desktop.py
++++ b/tests/test_desktop.py
+@@ -176,6 +176,22 @@ def test_entry_viewers_are_vertically_resizable():
+     assert "resize-none" not in stored_source
+ 
+ 
++def test_stored_memory_statistics_are_compact_and_responsive():
++    source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
++    stored = source.split("function StoredMemoryPage", 1)[1].split("function MagiPage", 1)[0]
++
++    # One compact summary band, switching to four columns before the usual lg breakpoint.
++    assert "mt-2 grid grid-cols-2" in stored
++    assert "min-[34rem]:grid-cols-4" in stored
++    assert stored.count("jsx(CompactStat,") == 3
++    assert "label: 'Entries'" in stored and "detail: targetLabel" in stored
++    assert "label: 'Characters'" in stored and "targetData.char_limit" in stored
++    assert "label: 'Estimated tokens'" in stored and "targetData.estimated_token_limit" in stored
++    assert "jsx(UsageBar, { percent: targetData.usage_percent })" in stored
++    assert "targetData.usage_percent >= 80" in stored
++    assert "Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))" in stored
++
++
+ def test_pending_review_filter_only_selects_visible_proposals():
+     source = (DESKTOP / "plugin.js").read_text(encoding="utf-8")
+     pending = source.split("function PendingWritesPage", 1)[1].split("function StoredMemoryPage", 1)[0]

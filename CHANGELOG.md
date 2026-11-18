@@ -2,10 +2,162 @@
 
 ## Unreleased
 
-- Added profile-scoped provider and model selectors to Stored memory, populated from the active Hermes profile's configured model catalog; selections are saved without manual model IDs.
-- Declared `llm.provider_override` and `llm.model_override` so Hermes can request and enforce consent for configured compaction routing.
-- Removed the global `sys.modules` alias used by the Agent/Desktop LLM bridge; backend discovery now reads only the plugin-owned module and fails closed on ambiguity or unload.
-- Replaced the private `MemoryStore._mutate` override with Hermes' public conditional `apply_batch(expected_entries=...)` API; older hosts refuse Apply without writing until Hermes PR #135901 is released.
+- Reorganized export/import controls into a compact Transfer dropdown (`aria-expanded`/`aria-controls`/`role="menu"`) in Stored memory, freeing toolbar space; Export memory, Export both stores, and Import JSON now live inside one accessible menu. Existing import/export behavior and per-store fingerprint preconditions are unchanged.
+- Added an explicit **Dismiss** button to the organization analysis panel (Review memory with AI), letting users close the panel without taking any decision; bounded-request, no-apply behavior preserved.
+
+## 1.8.4 — 2026-10-30
+
+- Preserve Hermes' active profile context for LLM requests through the profile-local IPC bridge, ensuring profile-scoped AI actions resolve against the intended context.
+
+## 1.8.3 — 2026-10-30
+
+- Render pending-record details from the already-loaded record, avoiding repeated queue reads while preserving response content.
+- Reorganized the documentation into focused guides, updated the workflow diagram, and refreshed the synthetic Desktop screenshots including History.
+
+## 1.8.2 — 2026-10-29
+
+- Require explicit `llm.model_override` consent for compaction-model overrides; hosts without capability probing fail closed while default-model requests remain available.
+- Version the profile-local IPC bridge as protocol v2 and reject active legacy listeners that cannot enforce the consent gate. Preserve Dashboard's case-insensitive search behavior while avoiding Hermes' inline shell-scan spelling.
+
+## 1.8.1 — 2026-10-26
+
+- Redesigned the Desktop workspace with a full-width memory list/editor, always-visible usage estimates and common actions, responsive review panes, inline history filters, and explicit accessible confirmations. Existing memory, transfer, AI, pending-write, and audit safeguards remain intact.
+- Restored Review memory with AI and Compact with AI across Dashboard/Agent processes through a profile-local Unix socket to the active Agent's `ctx.llm`. The bridge bounds and validates structured requests, stops accepting work on unload, and drains in-flight calls before releasing context; Hermes configuration remains unchanged.
+
+## 1.8.0 — 2026-10-23
+
+- Simplified the Desktop workspace with progressive disclosures for advanced
+  pending/history filters, bulk decisions, usage details, memory transfer and AI tools.
+  Clarified action labels and accessible tooltips, keyboard focus, active filter
+  counts and filter reset; existing import/export, AI review and history filters
+  remain available.
+- MAGI-011: pending bulk decisions now show per-record results in a collapsible,
+  accessible panel with separate applied, rejected, failed and reconciliation
+  counters. Failed records still in the queue can be opened without replaying
+  mutations; only failed rejection attempts offer a manual retry. Result state
+  and confirmation feedback persist when changing the Magi section.
+- MAGI-004: after a native pending approval, Magi records a content-free,
+  profile-scoped reconciliation marker before removing the pending file.
+  Uncertain cleanup prevents repeat approval across backend reloads; duplicate
+  pending additions already present in memory are also flagged as ambiguous.
+  Rejection clears the pending record and marker without replaying a write.
+  The journal is best-effort across crashes and does not provide exactly-once
+  atomicity between Hermes memory and Magi's proposal queue.
+- MAGI-003: pending proposals that are malformed, missing destructive
+  `matched_entry` pins or otherwise unverifiable are rejected before native
+  approval. Memory-store read errors disable approval; bulk operations still
+  attempt other valid records and return per-record results. Rejection remains
+  available; final concurrency conflicts continue to be decided by Hermes.
+- MAGI-002: pending approve/reject now reports complete, partial or failed
+  outcomes with per-record statuses and counts. Successful memory mutations
+  followed by pending-file cleanup failure are distinguished from completed
+  operations; Desktop displays partial outcomes as warnings. The legacy text
+  output remains available; `success` is false for incomplete decisions.
+- MAGI-001: rejected Magi-controlled additions, replacements, pending approvals
+  and AI-compaction proposals containing Hermes' complete entry delimiter
+  (`\\n§\\n`), before native mutation. Invalid model proposals retry safely;
+  existing malformed entries are flagged by read-only index diagnostics.
+  Ordinary multiline and Unicode entries remain supported.
+- Preserved dirty stored-memory drafts during polling and guarded in-plugin
+  selection/section navigation with explicit continue, discard or save actions;
+  source changes disable Save until manually reconciled (MAGI-007).
+- Allowed manual editing, splitting, merging and removing compacted entries,
+  with local estimates, duplicate/delimiter checks, backend-enforced budget
+  and fingerprint preconditions, and explicit final confirmation (MAGI-006).
+- Exposed a per-store source fingerprint in the existing memory response, and
+  disabled applying visibly outdated compaction previews with an explicit
+  regenerate action (MAGI-008). Native backend stale checks remain authoritative.
+- Added a selectable line diff between the original compaction snapshot and
+  proposed entries, with explicit unchanged/removed/added labels and no extra
+  AI request (MAGI-005).
+- Added per-store, read-only memory diagnostics with exact duplicate-text
+  groups, character usage, length distribution, and links to flagged entries.
+  Informational thresholds and limitations are documented; the indicators
+  neither invoke AI nor trigger automatic edits (MAGI-018).
+- Added combinable pending-queue search, action, store, origin, status and UTC
+  creation-date filters, with an explicit clear action and filtered/global
+  totals. Invalid dates are labeled unknown; bulk approval/rejection remains
+  explicitly scoped to the entire queue, even with filters active (MAGI-010).
+- Added an explicitly authorized, optional AI preservation review of compaction
+  snapshots with quoted evidence, omission/distortion/ambiguity suspicions and
+  uncertainty labeling. Review failures never apply or alter proposals (MAGI-009).
+- Added elapsed-time feedback and an explicit "Stop waiting" action for
+  long-running compaction requests. Abandoning only ignores the late Desktop
+  response; it does not cancel backend work or imply that token costs stop (MAGI-019).
+
+- MAGI-017: added an explicit, read-only AI organization analysis for stored
+  memory. Suggestions cite exact original text, expose uncertainty, discard
+  invalid references, and make one bounded request without applying changes.
+- MAGI-016: added a profile-local, metadata-only history for mutating Magi
+  actions, with bounded retention, restricted file permissions, date/operation/
+  outcome filters, confirmed clearing, and explicit warnings when audit writes
+  fail. History is not an undo log and does not include external Hermes changes.
+- MAGI-015: added local versioned JSON export and a bounded import preview
+  for Memory, User, or both. Imports validate schema, duplicates, Hermes entry
+  delimiters and character budgets, then add only missing entries through
+  Hermes' native batch API after explicit confirmation. Per-target partial
+  results and concurrency/atomicity limits are documented.
+- MAGI-014: introduced isolated Hermes compatibility CI jobs pinned to exact
+  SHAs for the 0.21.5 minimum (`v2026.9.24`, Python 3.13), the existing pinned
+  revision and latest stable `v0.22.5`; the two baseline jobs are required and
+  the latest is informational. Added a disposable-profile native Memory/User
+  transaction probe, local-version evidence, and documented known limits.
+
+- MAGI-012: added deterministic React DOM interaction tests for the actual
+  Desktop module using Hermes' Vitest/React Testing Library patterns and a
+  mock SDK/REST context; covers queue decisions, errors, navigation, stored
+  memory CRUD, and compaction preview/cancel/apply. Added CI and local runner,
+  explicit keyboard navigation assertions, and documentation of outstanding
+  interaction features beyond this test-only change.
+- MAGI-020: removed the duplicate pytest pass from `verify.sh`, leaving one
+  coverage-instrumented test run while preserving standalone `ci/test.sh`,
+  production coverage enforcement, syntax checks, and Hermes plugin admission.
+  Added shell regressions for test invocation count and failure propagation.
+  On the measured macOS baseline, verification improved from 38.66s to 17.35s
+  (single-run observation; elapsed time depends on the environment).
+- MAGI-013: measured coverage exclusively for the four production Python
+  modules, with branch instrumentation and per-file missed-line reporting.
+  Set the POLIS and local verification line-coverage threshold to the measured,
+  achievable >90% production level; documented the former misleading 96.45%
+  global metric versus 91.49% production on baseline `d9c72a8`.
+- Documented the Hermes upstream API guarantees still needed for atomic
+  snapshot/version preconditions, including reordering and ABA scenarios;
+  distinguished the pre-existing shared-delimiter serialization issue from
+  regressions caused by the public batch API migration, and summarized the two
+  isolated stress campaigns and their remaining uncertainties.
+- Applied Desktop AI compaction through Hermes' public `MemoryStore.apply_batch`
+  without rebinding the private `_mutate` method or depending on `skip_drift`,
+  resolving the Hermes plugin catalog rule 9 review.
+- Kept the preview fingerprint precheck, exact `matched_entry` pins, and native
+  all-or-nothing batch writes for both Memory and User stores. Concurrent
+  additions remain intact, while missing pinned entries reject the batch;
+  full-snapshot revalidation under the lock requires a future Hermes API
+  precondition parameter.
+- Added focused regressions for public-API-only compaction, concurrent add and
+  remove behavior, and disk-backed Hermes transactions, with the original
+  1.7.8 manifest, preview limits, and other plugin capabilities unchanged.
+
+## 1.7.8 — 2026-10-17
+
+- Removed the process-global module alias from the LLM context bridge and
+  resolved the active Agent bridge by its plugin file, rejecting ambiguous or
+  unavailable contexts.
+- Reorganized Stored memory metrics into compact Entries, Estimated tokens,
+  and Characters summaries above a full-width Character budget bar, and
+  consolidated search, Memory/User selection, and actions into one responsive
+  toolbar.
+- Clarified the selected state of both Memory/User and Pending writes/Stored
+  memory switches with a shared visual treatment, distinct hover/focus states,
+  and accessible pressed-state semantics.
+- Added focused regression coverage for the compact layout, navigation,
+  responsive controls, and selection states.
+- Renamed the visible workspace heading to **Magi Workspace**, added a small
+  decorative wand icon to **Compact with AI**, and updated the README with the
+  current version and separate Pending writes / Stored memory screenshots.
+- Removed six generated POLIS `.polis` delivery packages from Git tracking and
+  ignored future packages across the repository, while keeping the POLIS
+  retention configuration, contracts, plans, proofs, and validation evidence
+  available for version control without rewriting published history.
 
 ## 1.7.7 — 2026-10-08
 

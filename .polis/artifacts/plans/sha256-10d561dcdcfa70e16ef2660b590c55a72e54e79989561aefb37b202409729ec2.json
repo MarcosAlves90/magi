@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "change_contract_sha256": "4a8ba78374ef2d612583c5c510538e6d300d5938d84a7a6deabec89c16e7a723",
+  "git_object_format": "sha1",
+  "base_commit": "6b8090901aa241f3727de9aa3d8bec1eda2eed53",
+  "base_tree": "f327d13faeb75978b33d35fb335df87cfd0bf794",
+  "strategy": "red_green",
+  "steps": [
+    {
+      "id": "PLAN-001",
+      "kind": "test",
+      "objective": "Add or update tests for AC-1",
+      "requirements": [
+        "REQ-1"
+      ],
+      "acceptance_criteria": [
+        "AC-1"
+      ],
+      "allowed_paths": [
+        "tests/test_desktop.py"
+      ]
+    },
+    {
+      "id": "PLAN-002",
+      "kind": "test",
+      "objective": "Add or update tests for AC-2",
+      "requirements": [
+        "REQ-2"
+      ],
+      "acceptance_criteria": [
+        "AC-2"
+      ],
+      "allowed_paths": [
+        "tests/test_desktop.py"
+      ],
+      "depends_on": [
+        "PLAN-001"
+      ]
+    },
+    {
+      "id": "PLAN-003",
+      "kind": "test",
+      "objective": "Add or update tests for AC-3",
+      "requirements": [
+        "REQ-3"
+      ],
+      "acceptance_criteria": [
+        "AC-3"
+      ],
+      "allowed_paths": [
+        "tests/test_desktop.py"
+      ],
+      "depends_on": [
+        "PLAN-002"
+      ]
+    },
+    {
+      "id": "PLAN-004",
+      "kind": "test",
+      "objective": "Add or update tests for AC-4",
+      "requirements": [
+        "REQ-4"
+      ],
+      "acceptance_criteria": [
+        "AC-4"
+      ],
+      "allowed_paths": [
+        "tests/test_desktop.py"
+      ],
+      "depends_on": [
+        "PLAN-003"
+      ]
+    },
+    {
+      "id": "PLAN-005",
+      "kind": "proof",
+      "objective": "Capture the contract's Red regression proof",
+      "depends_on": [
+        "PLAN-004"
+      ],
+      "contract_proofs": [
+        "regression"
+      ]
+    },
+    {
+      "id": "PLAN-006",
+      "kind": "implementation",
+      "objective": "Implement REQ-1",
+      "requirements": [
+        "REQ-1"
+      ],
+      "acceptance_criteria": [
+        "AC-1"
+      ],
+      "allowed_paths": [
+        "desktop/plugin.js",
+        "tests/test_desktop.py"
+      ],
+      "depends_on": [
+        "PLAN-005"
+      ]
+    },
+    {
+      "id": "PLAN-007",
+      "kind": "implementation",
+      "objective": "Implement REQ-2",
+      "requirements": [
+        "REQ-2"
+      ],
+      "acceptance_criteria": [
+        "AC-2"
+      ],
+      "allowed_paths": [
+        "desktop/plugin.js",
+        "tests/test_desktop.py"
+      ],
+      "depends_on": [
+        "PLAN-006"
+      ]
+    },
+    {
+      "id": "PLAN-008",
+      "kind": "implementation",
+      "objective": "Implement REQ-3",
+      "requirements": [
+        "REQ-3"
+      ],
+      "acceptance_criteria": [
+        "AC-3"
+      ],
+      "allowed_paths": [
+        "desktop/plugin.js",
+        "tests/test_desktop.py"
+      ],
+      "depends_on": [
+        "PLAN-007"
+      ]
+    },
+    {
+      "id": "PLAN-009",
+      "kind": "implementation",
+      "objective": "Implement REQ-4",
+      "requirements": [
+        "REQ-4"
+      ],
+      "acceptance_criteria": [
+        "AC-4"
+      ],
+      "allowed_paths": [
+        "desktop/plugin.js",
+        "tests/test_desktop.py"
+      ],
+      "depends_on": [
+        "PLAN-008"
+      ]
+    },
+    {
+      "id": "PLAN-010",
+      "kind": "validation",
+      "objective": "Run the locked proof commands and enabled Project Policy gates",
+      "depends_on": [
+        "PLAN-009"
+      ],
+      "contract_proofs": [
+        "regression",
+        "behavior",
+        "affected"
+      ],
+      "project_gates": [
+        "test.complete",
+        "coverage"
+      ]
+    }
+  ]
+}

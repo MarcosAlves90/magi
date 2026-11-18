@@ -1,0 +1,45 @@
+diff --git a/tests/test_quality_scripts.py b/tests/test_quality_scripts.py
+index 1fe3aa2cbb39b4bba353601c3bdb6dde08912f06..bb0c380e9cf46481d3549967d30885a69644a797 100644
+--- a/tests/test_quality_scripts.py
++++ b/tests/test_quality_scripts.py
+@@ -36,6 +36,11 @@ def _sandbox(tmp_path):
+         "args = sys.argv[1:]\n"
+         "with open(os.environ['QUALITY_INVOCATIONS'], 'a') as log:\n"
+         "    log.write(json.dumps(args) + '\\n')\n"
++        "if 'pytest' in args and os.environ.get('QUALITY_FAIL_PYTEST') == '1':\n"
++        "    sys.exit(7)\n"
++        "if args[-2:] == ['python', '-']:\n"
++        "    import subprocess\n"
++        "    sys.exit(subprocess.call([sys.executable, '-'], stdin=sys.stdin))\n"
+         "if 'xml' in args:\n"
+         "    rate = os.environ.get('QUALITY_LINE_RATE', '0.9149')\n"
+         "    pathlib.Path('coverage.xml').write_text('<coverage line-rate=\"' + rate + '\"/>')\n"
+@@ -77,3 +82,28 @@ def test_production_coverage_gate_is_explicit_and_consistent():
+     assert gate["threshold_percent"] == 90
+     assert gate["operator"] == ">"
+ 
++
++def test_verify_runs_test_suite_once(tmp_path):
++    project, log, env = _sandbox(tmp_path)
++    result = subprocess.run(["bash", "verify.sh"], cwd=project, env=env, capture_output=True, text=True)
++    assert result.returncode == 0, result.stdout + result.stderr
++    pytest_calls = [args for args in _invocations(log) if "pytest" in args]
++    assert len(pytest_calls) == 1, f"pytest ran {len(pytest_calls)} times: {pytest_calls}"
++    assert "Hermes plugin validation" in result.stdout
++    assert "production line coverage: 91.49%" in result.stdout
++
++
++def test_verify_fails_on_production_coverage_below_threshold(tmp_path):
++    project, _, env = _sandbox(tmp_path)
++    env["QUALITY_LINE_RATE"] = "0.9000"
++    result = subprocess.run(["bash", "verify.sh"], cwd=project, env=env, capture_output=True, text=True)
++    assert result.returncode != 0
++    assert "production line coverage must be >90%" in result.stderr
++
++
++def test_verify_propagates_pytest_failures(tmp_path):
++    project, log, env = _sandbox(tmp_path)
++    env["QUALITY_FAIL_PYTEST"] = "1"
++    result = subprocess.run(["bash", "verify.sh"], cwd=project, env=env, capture_output=True, text=True)
++    assert result.returncode == 7
++    assert "pytest" in _invocations(log)[0]

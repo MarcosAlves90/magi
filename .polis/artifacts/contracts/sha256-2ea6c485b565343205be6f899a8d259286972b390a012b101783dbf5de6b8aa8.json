@@ -1,0 +1,199 @@
+{
+  "schema_version": 6,
+  "kind": "feature",
+  "commit": {
+    "message": "feat(desktop): compact stored memory summary"
+  },
+  "scope": {
+    "allowed_paths": [
+      "desktop/plugin.js",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Condense the Stored memory header statistics into one readable responsive summary band so more room remains for reviewing memory entries.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "At ordinary Desktop widths, Entries, Characters, Estimated tokens and character-budget progress occupy a single compact row in one summary band; small screens reflow without horizontal clipping."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Keep the active target, used/available character counts, approximate token usage/budget, usage percent and remaining free characters visible with correct labels."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Preserve existing theme tokens, native usage bar, memory APIs, editable content and action buttons, without new dependencies."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "A focused regression detects when the Stored memory summary is no longer a compact responsive band containing three data items and a budget progress segment.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "A focused regression checks retention of the four metric names, value expressions, active target and remaining-budget feedback.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Existing Desktop tests, Hermes validation and POLIS strict coverage gates pass.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Stored-memory values remain bound to targetData for the selected target without backend changes."
+      },
+      {
+        "id": "INV-2",
+        "statement": "The shared StatCard remains available to existing other views."
+      },
+      {
+        "id": "INV-3",
+        "statement": "The summary uses existing Hermes theme CSS variables and React JSX primitives."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "A Desktop-width summary displays four full-width cards in two rows."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "A compact summary omits token approximations or the free-character indicator."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "The change mutates stored memory or alters the API contract."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Magi 1.7.7 StoredMemoryPage and the user-supplied screenshot showing two rows of large metric cards."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "A reduced-height responsive metric summary in desktop/plugin.js."
+      },
+      {
+        "id": "OUT-2",
+        "statement": "Focused Red-to-Green test and POLIS artifact validation."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Missing values retain existing zero defaults, and remaining budget is bounded to zero."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "Invalid responsive summary regressions or strict gates block the release artifact."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "dc8a9f65915da6f5d6f45caa609a5638330e8f59",
+    "base_tree": "b0936b693a55ab55fc3e029407f77efd201d1188",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "993e998093f4f43ea477d3b2366c480ceab481b4f2e150998b6bb8ddabae778b"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_stored_memory_statistics_are_compact_and_responsive"
+    ]
+  }
+}

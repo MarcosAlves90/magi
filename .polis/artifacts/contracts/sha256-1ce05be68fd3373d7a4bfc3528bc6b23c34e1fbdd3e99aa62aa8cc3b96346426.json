@@ -1,0 +1,205 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "fix(pending): fail closed on unverifiable approvals (MAGI-003)"
+  },
+  "scope": {
+    "allowed_paths": [
+      "dashboard/plugin_api.py",
+      "core.py",
+      "desktop/plugin.js",
+      "tests/test_desktop.py",
+      "CHANGELOG.md",
+      "README.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-003: fail closed for invalid or unverifiable pending approvals, including list/read status and backend validation at the moment of mutation, without preventing rejections.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Failure to read MemoryStore reports unknown can_apply false with safe explanation."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Validate each record structurally via MagiReview.validate_record before approving, including approve all; invalid ones do not call native approval."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "For replace and remove require usable matched_entry pins and current entry existence; native Hermes mutation remains final concurrency authority."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Other eligible batch records continue, result per-item failures per MAGI-002, and reject remains available for invalid or obsolete records."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Storage-read failure disables approval in list/detail and returns unknown state.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Malformed/unpinned/missing records in bulk are blocked while valid siblings apply.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Native race failure after precheck propagates failed result; rejecting unverifiable proposal works.",
+        "requirements": [
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Existing suite, verify.sh and POLIS gates pass.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Never bypass Hermes public pending approval API, do not create atomic full snapshot guarantee."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Reject remains authorized despite unverifiable store; valid approvals unaffected."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Any malformed or missing-pin destructive record invokes native approval."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Read error presents can_apply true or reports phantom success."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "TASKS.md MAGI-003, read/approve code and previously implemented MAGI-002 outcomes."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Fail-closed status and approval precheck with per-record error handling and regressions."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Precheck is advisory; any concurrent native conflict is reported as failure; no atomic snapshot claims."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "d85dbe989c51ff4370d3d10ab8a345c81a6f2891",
+    "base_tree": "a5ca410712303a03e982812f7106ab4a154f58e8",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "591855cbaeec3565b5f86215dd24ae283a18e121d0a92454d5648ae768f839d4"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_backend_blocks_unverifiable_pending_approvals"
+    ]
+  }
+}

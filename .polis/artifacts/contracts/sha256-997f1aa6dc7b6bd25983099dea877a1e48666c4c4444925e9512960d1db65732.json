@@ -1,0 +1,194 @@
+{
+  "schema_version": 6,
+  "kind": "behavior_preserving",
+  "scope": {
+    "allowed_paths": [
+      "README.md",
+      "docs/screenshots/pending-writes.png",
+      "docs/screenshots/stored-memory.png",
+      "docs/screenshots/history.png",
+      "tests/test_desktop.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Refresh Magi Desktop screenshots for Pending writes, Stored memory, and History using the real plugin UI with synthetic in-memory data, preserving all existing Hermes profiles and memory files.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Capture all three pages in an isolated browser harness rendering the repository's actual desktop/plugin.js with synthetic in-memory fixtures only; do not connect to or write any existing Hermes profile or memory store."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Replace the Pending writes and Stored memory screenshots, add a History screenshot, and link all three local images from README with descriptive non-empty alt text."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Extend the enabled README screenshot regression to verify all three local links, PNG signatures, and 1414x994 dimensions, and keep the configured test and coverage gates passing."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "CUA visually verifies all three pages of the actual Magi plugin UI using clearly synthetic demo data in a throwaway browser with no access to existing profile or memory files.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "README has exactly one descriptive local image link per requested page; each asset is a valid 1414x994 PNG.",
+        "requirements": [
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "The same full test command passes on the clean baseline and final tree, and both enabled POLIS gates pass on the final tree.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No existing Hermes profile, MEMORY.md, USER.md, pending queue, or durable memory is read or modified for screenshots."
+      },
+      {
+        "id": "INV-2",
+        "statement": "No runtime source, dependency, plugin configuration, or unrelated documentation changes are made."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Harness code, fixtures, browser state, and build output remain outside the repository; only the requested README, screenshot assets, and their regression assertion are retained."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Any screenshot data comes from an existing Hermes profile, real user memory, or real pending writes."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "A screenshot is replaced or claimed verified without rendering and inspecting the actual plugin UI in the isolated browser."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "History is omitted, local image links are broken, PNG assets are malformed, or configured gates fail."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "The user requested screenshots for Pending writes, Stored memory, and History, with synthetic browser data and no changes to existing profiles or memories."
+      },
+      {
+        "id": "IN-2",
+        "statement": "The README currently links pending-writes.png and stored-memory.png; the existing regression requires 1414x994 PNGs."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Three CUA-inspected local PNG screenshots rendered from the actual Magi plugin UI with synthetic data, referenced in README and validated by the enabled suite."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "If the isolated browser cannot render the actual plugin with synthetic data, do not replace screenshots or claim visual validation; report the blocker without accessing existing profiles or memories."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "f10a218905d6d3f94b5ae159d29ef38910e6852b",
+    "base_tree": "6b20a4d4105a4d1780471caf2b50b4fe6fe12f96",
+    "policy_sha256": "58faac8d898e812c38428bccaee227000fa1bbced1a08fc3f22e7bec7cf4cf64",
+    "specification_sha256": "04b17523c15df58fad0a09d41c8041335a39162b1db6e1aab4ca8f2e448d69e6"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "-c",
+      "bash ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 1200,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "green_green",
+    "command": {
+      "argv": [
+        "bash",
+        "-c",
+        "bash ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 1200,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    }
+  }
+}

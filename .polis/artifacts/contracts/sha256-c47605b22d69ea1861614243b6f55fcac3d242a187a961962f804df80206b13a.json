@@ -1,0 +1,188 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "fix(ci): measure Magi production coverage separately"
+  },
+  "scope": {
+    "allowed_paths": [
+      "ci/coverage.sh",
+      "verify.sh",
+      ".polis/policy.json",
+      "README.md",
+      "CHANGELOG.md",
+      "tests/test_quality_scripts.py"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_quality_scripts.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-013: ensure line/branch coverage reports and enforcement measure only the four Magi production Python files, excluding tests from denominator; start with evidence-based \u003e90% line gate.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Exclude tests from instrumentation and reports, and report exactly __init__.py, core.py, runtime_bridge.py and dashboard/plugin_api.py, preserving branch measurements."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Explicit \u003e90% production line gate in both POLIS coverage adapter and verify.sh, with per-file missing line/branch output."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Document measured baseline production and global difference plus reproduction command; preserve Magi 1.7.8."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Script regression proves coverage run excludes tests/ and XML/report include the four production modules with branch measurement.",
+        "requirements": [
+          "REQ-1"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Production line threshold is \u003e90% and a test proves the production denominator is not contaminated by tests; green POLIS coverage adapter passes with live measured lines and failures remain nonzero.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Documentation includes production and global baseline metrics, reproduction and limitations, with no version bump.",
+        "requirements": [
+          "REQ-3"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Existing plugin, memory and Hermes APIs are untouched; only CI/quality scripts, test, docs and tracked POLIS artifacts may change."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "A coverage report includes tests/ in its production denominator or claims \u003e95% production coverage from the global report."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Baseline d9c72a8, coverage global line-rate 96.45%, production subset 846 statements with 72 missed, ~91.49% line coverage."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Production-specific coverage script, matching POLIS/verify threshold, script regression and README/CHANGELOG documentation."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Coverage below threshold, missing report or tests failure yields nonzero exit."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "d9c72a8c4a6089a2bab2748721828a26e4b9e5f5",
+    "base_tree": "b76553c46976146f55782d838a8d1738bcddff16",
+    "policy_sha256": "58faac8d898e812c38428bccaee227000fa1bbced1a08fc3f22e7bec7cf4cf64",
+    "specification_sha256": "1c131a0b4c15a5ac3114ef89a591991fdd61425478207be9a1d0a0be3104f4f8"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "uv",
+        "run",
+        "--with",
+        "pytest\u003e=8,\u003c10",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_quality_scripts.py",
+        "--rootdir=tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_production_coverage_command_scope"
+    ]
+  }
+}

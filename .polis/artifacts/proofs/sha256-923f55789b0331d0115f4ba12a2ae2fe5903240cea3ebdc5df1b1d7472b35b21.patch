@@ -1,0 +1,89 @@
+diff --git a/tests/test_compaction_009.py b/tests/test_compaction_009.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..df7d9aa824e234bea7cd2c3efc75197072c3b823
+--- /dev/null
++++ b/tests/test_compaction_009.py
+@@ -0,0 +1,83 @@
++"""MAGI-009 user-authorized, evidence-qualified AI comparison."""
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++from test_desktop import FakeMemoryStore, client_for, load_api
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++class ReviewLlm:
++    def __init__(self, fail=False):
++        self.calls = []
++        self.fail = fail
++
++    def complete_structured(self, **kwargs):
++        self.calls.append(kwargs)
++        if self.fail:
++            raise TimeoutError("simulated provider timeout")
++        return SimpleNamespace(parsed={
++            "suspicions": [{
++                "category": "omission", "description": "A date may be absent",
++                "source_excerpt": "deadline 2026", "proposal_excerpt": "",
++                "explanation": "No date appears in the shorter text",
++            }], "overall_uncertainty": "The model may overlook other issues.",
++        })
++
++
++@pytest.mark.parametrize("target", ["memory", "user"])
++def test_magi_009_only_explicit_request_uses_model_with_untrusted_snapshots(monkeypatch, target):
++    api = load_api()
++    original = ["A" * 100]
++    store = FakeMemoryStore(**{target: original})
++    llm = ReviewLlm()
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    monkeypatch.setattr(api, "_plugin_llm", lambda: llm)
++    monkeypatch.setattr(api, "_settings", lambda: {"compaction_model": "provider/reviewer"})
++    client = client_for(api)
++    assert client.get('/memory').status_code == 200
++    assert llm.calls == []
++    payload = {"source_fingerprint": api._source_fingerprint(original), "source_entries": original, "proposed_entries": ["A" * 40]}
++    response = client.post(f"/memory/{target}/compact/review", json=payload)
++    assert response.status_code == 200
++    body = response.json()
++    assert body["success"]
++    assert body["report"]["label"] == "AI suspicions (not proof)"
++    assert body["report"]["suspicions"][0]["source_excerpt"] == "deadline 2026"
++    assert len(llm.calls) == 1
++    assert llm.calls[0]["model"] == "provider/reviewer"
++    assert "untrusted" in llm.calls[0]["system_prompt"].lower()
++    assert "A" * 100 in str(llm.calls[0]["input"])
++    assert "A" * 40 in str(llm.calls[0]["input"])
++    assert store.batch_calls == [] and getattr(store, target + "_entries") == original
++
++
++def test_magi_009_stale_or_failed_review_never_writes(monkeypatch):
++    api = load_api()
++    store = FakeMemoryStore(memory=["original" * 20])
++    llm = ReviewLlm(fail=True)
++    monkeypatch.setattr(api, "_memory_store", lambda: store)
++    monkeypatch.setattr(api, "_plugin_llm", lambda: llm)
++    client = client_for(api)
++    payload = {"source_fingerprint": "stale", "source_entries": ["original" * 20], "proposed_entries": ["small"]}
++    assert client.post('/memory/memory/compact/review', json=payload).status_code == 409
++    assert llm.calls == []
++    payload["source_fingerprint"] = api._source_fingerprint(store.memory_entries)
++    response = client.post('/memory/memory/compact/review', json=payload)
++    assert response.status_code == 503
++    assert store.batch_calls == [] and len(llm.calls) == 1
++
++
++def test_magi_009_desktop_requires_second_confirmation_and_shows_uncertainty():
++    ui = (ROOT / 'desktop/plugin.js').read_text()
++    stored = ui.split('function StoredMemoryPage', 1)[1].split('function MagiPage', 1)[0]
++    assert 'Check preservation' in stored
++    assert 'Confirm sending to model' in stored
++    assert 'reviewConfirm' in stored
++    assert 'requestSemanticReview' in stored
++    assert 'Suspicions from AI' in stored
++    assert 'Uncertainty' in stored
++    assert 'source_excerpt' in stored and 'proposal_excerpt' in stored
++    assert 'setSemanticReport' in stored

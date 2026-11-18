@@ -1,0 +1,206 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "fix(memory): reject embedded Hermes entry delimiter (MAGI-001)"
+  },
+  "scope": {
+    "allowed_paths": [
+      "core.py",
+      "dashboard/plugin_api.py",
+      "tests/test_desktop.py",
+      "tests/test_plugin.py",
+      "CHANGELOG.md",
+      "docs/hermes-memory-compatibility.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py",
+      "tests/test_plugin.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-001: reject the complete Hermes memory entry delimiter in all Magi-controlled new content before invoking public MemoryStore operations or accepting compacted AI proposals; diagnose preexisting values without editing them. Preserve Magi 1.7.8 and Hermes contracts.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Validate any Magi-controlled add/replace content for the exact Hermes entry delimiter before native mutation, in memory and user."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Reject AI compaction proposals embedding the delimiter, retry generation when possible and block apply prior to calling apply_batch."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Reject any invalid pending add/replace proposal when Magi controls its approval; allow rejection of invalid proposals and do not modify legacy entries automatically."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Preserve normal Unicode, isolated section signs, multiline entries, pins, budgets, fingerprints, public native APIs and version 1.7.8; document diagnostic and limitations."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Tests demonstrate both targets reject content containing the complete delimiter before store add/replace and allow ordinary Unicode/newlines/isolated section signs.",
+        "requirements": [
+          "REQ-1",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Compaction previews containing embedded delimiter retry or fail safely; crafted apply requests containing delimiter never call batch.",
+        "requirements": [
+          "REQ-2",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Pending approvals cannot persist add/replace content containing delimiter and rejects remain possible.",
+        "requirements": [
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Existing tests and POLIS gates pass; changelog and compatibility notes describe Magi-only protection without upstream guarantees.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "Do not write MEMORY.md or USER.md directly, only public existing Hermes APIs."
+      },
+      {
+        "id": "INV-2",
+        "statement": "No change to Hermes or plugin version; preserve valid memory actions and existing UX."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Magi persists an embedded complete entry delimiter in new memory content."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Magi claims that this prevents all Hermes writers from persisting invalid serialization."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "TASKS.md MAGI-001; compatibility note describing existing delimiter round-trip failure."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Magi-specific shared validation, API and compaction protections with targeted regressions."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Reject invalid content before native mutation and return explicit safe error; if AI output invalid, retry or return no-change/error."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "d9c72a8c4a6089a2bab2748721828a26e4b9e5f5",
+    "base_tree": "b76553c46976146f55782d838a8d1738bcddff16",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "1297d6d161ed8278f996479ea617b97bb2fcceb7db64832adcb7ed06366597e7"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_backend_rejects_embedded_entry_delimiter"
+    ]
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "docs(changelog): record compaction API fix and POLIS contract"
+  },
+  "scope": {
+    "allowed_paths": [
+      "dashboard/plugin_api.py",
+      "tests/test_desktop.py",
+      "CHANGELOG.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "Address Hermes catalog PR #140369 review #5557895958: stop rebinding MemoryStore._mutate during Desktop AI compaction, use the public atomic apply_batch API, preserve the Magi 1.7.8 feature and compatibility contracts, test concurrent writers, and document the correction in the 1.7.8 changelog. This contract reconstructs and validates a correction already committed locally as 9327744; it does not claim that the original implementation followed this POLIS lock chronologically.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "Call the public MemoryStore.apply_batch(target, operations) directly for AI compaction, without wrapping, rebinding, deleting, or depending on private MemoryStore._mutate and its skip_drift parameter."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "Preserve both MEMORY.md and USER.md Desktop compaction paths: preview fingerprint precheck, input and budget validation, full matched_entry pins, single atomic batch, response shape, and all other Magi review/edit functionality."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "Use Hermes native batch atomicity to preserve concurrent added entries and reject stale pinned removals without partial updates; do not claim an atomic full-snapshot precondition that the public API cannot guarantee."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Keep the plugin version 1.7.8, requires_hermes floor and all existing plugin registrations and dependencies unchanged; append the fix to CHANGELOG section 1.7.8 with the concurrency behavior and tests."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Regression exercises memory and user compaction with a store rejecting _mutate rebinding and confirms the public apply_batch succeeds.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "Regression verifies fingerprint mismatch rejection, requested entries and budgets validation, pinned operations and single all-or-nothing native batch, plus existing pending and stored memory API tests.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Regression models concurrent additions and deletions with a fake store and native disk-backed Hermes; additions survive and missing pins abort without partial writes.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Complete test suite and configured POLIS coverage gate pass above 95% line coverage; Hermes plugin validation reports ok with no core override; manifest stays 1.7.8 and changelog records the change in 1.7.8.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "All pending-write decisions, stored-memory CRUD, optional compaction model permissions, preview and apply routes and UI remain available with the existing Hermes API contracts."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Hermes controls locking, validation and disk writes; the plugin uses only public apply_batch for the mutation and does not mutate the host's method bindings."
+      },
+      {
+        "id": "INV-3",
+        "statement": "Release remains 1.7.8 and change paths stay restricted to dashboard/plugin_api.py, tests/test_desktop.py, CHANGELOG.md and POLIS retained evidence."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "Compaction reassigns MemoryStore._mutate, calls it, or relies on its private skip_drift signature."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Concurrent writer data is discarded, or a failed stale pinned batch partially commits new entries."
+      },
+      {
+        "id": "FORBID-3",
+        "statement": "Version bump, unrelated feature changes, history rewrite, remote push, or GitHub review reply."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "Magi commit 65e94bd5ddb4f9635baf9b6c996900e47748e76b, the last published 1.7.8 baseline before the local fix."
+      },
+      {
+        "id": "IN-2",
+        "statement": "Hermes maintainer review #5557895958 on NousResearch/hermes-agent PR #140369, requesting direct public apply_batch with existing matched_entry pins."
+      },
+      {
+        "id": "IN-3",
+        "statement": "Pre-existing local fix 93277443fff21d4b97355d833cd544b5e2d25947; historic tests are reconstructed on an isolated clean baseline for regression proof."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Public MemoryStore.apply_batch invocation in dashboard/plugin_api.py."
+      },
+      {
+        "id": "OUT-2",
+        "statement": "Revised regression tests and native Hermes disk concurrency coverage in tests/test_desktop.py."
+      },
+      {
+        "id": "OUT-3",
+        "statement": "1.7.8 CHANGELOG entry and POLIS locked contract, proof and validation artifacts with a subsequent local-only commit."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "Reject a stale preview before applying any operation and rely on Hermes batch error for a missing matched_entry without committing a partial batch."
+      },
+      {
+        "id": "FAIL-2",
+        "statement": "If contract evidence, coverage or plugin validation fails, report the exact failure and do not push or respond on GitHub."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "65e94bd5ddb4f9635baf9b6c996900e47748e76b",
+    "base_tree": "0cc4b1066dd6ddd473424e4b0d334869ed98f362",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "43ecebc21af28eec31b2d2930e7fcb922d3e20b6e9fa0fc27b7e97d4190f97ed"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_backend_compaction_never_rebinds_hermes_internal_methods"
+    ]
+  }
+}

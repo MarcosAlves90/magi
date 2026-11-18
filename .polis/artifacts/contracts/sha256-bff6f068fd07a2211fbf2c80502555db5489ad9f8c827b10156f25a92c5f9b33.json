@@ -1,0 +1,204 @@
+{
+  "schema_version": 6,
+  "kind": "defect",
+  "commit": {
+    "message": "fix(pending): report per-record decision outcomes (MAGI-002)"
+  },
+  "scope": {
+    "allowed_paths": [
+      "dashboard/plugin_api.py",
+      "desktop/plugin.js",
+      "tests/test_desktop.py",
+      "CHANGELOG.md",
+      "README.md"
+    ]
+  },
+  "test_scope": {
+    "allowed_paths": [
+      "tests/test_desktop.py"
+    ]
+  },
+  "development_method": "strict_sdd_tdd_v2",
+  "specification": {
+    "objective": "MAGI-002: return accurate complete/partial/failed outcomes for pending approve/reject decisions with per-item results and cleanup failures, and show partial results in Desktop.",
+    "requirements": [
+      {
+        "id": "REQ-1",
+        "statement": "API result includes outcome complete|partial|failed, attempted/applied/rejected/failed counts and items with id,status,error as relevant."
+      },
+      {
+        "id": "REQ-2",
+        "statement": "success is true only if entire selected operation completes; preserve legacy output and successful paths."
+      },
+      {
+        "id": "REQ-3",
+        "statement": "A memory mutation succeeding before pending-file cleanup fails must produce applied_cleanup_failed and never report full success."
+      },
+      {
+        "id": "REQ-4",
+        "statement": "Desktop runDecision/decide distinguish all three outcome values and retain visibility of completed items."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "statement": "Backend regressions verify all success, all failed and partial approve/reject, totals and item statuses.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-2",
+        "statement": "A cleanup failure after successful native mutation returns applied_cleanup_failed with error and partial/failed outcome.",
+        "requirements": [
+          "REQ-2",
+          "REQ-3"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-3",
+        "statement": "Desktop uses returned outcome instead of generic success display, handles 200 partial and preserves legacy output.",
+        "requirements": [
+          "REQ-2",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      },
+      {
+        "id": "AC-4",
+        "statement": "Regressions, POLIS gates and verify.sh pass and the contract is documented in Magi 1.7.8.",
+        "requirements": [
+          "REQ-1",
+          "REQ-2",
+          "REQ-3",
+          "REQ-4"
+        ],
+        "proof": "regression"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-1",
+        "statement": "No direct writes to Hermes MEMORY.md/USER.md or private-method overrides."
+      },
+      {
+        "id": "INV-2",
+        "statement": "Approval and rejection require explicit action and only return confirmed successes."
+      }
+    ],
+    "forbidden_states": [
+      {
+        "id": "FORBID-1",
+        "statement": "success true if any selected record fails or cleanup is incomplete."
+      },
+      {
+        "id": "FORBID-2",
+        "statement": "Desktop reports a partial or failed batch as full success."
+      }
+    ],
+    "inputs": [
+      {
+        "id": "IN-1",
+        "statement": "TASKS.md MAGI-002 and present dashboard/plugin_api.py decision endpoint behavior."
+      }
+    ],
+    "outputs": [
+      {
+        "id": "OUT-1",
+        "statement": "Structured decision API and updated Desktop feedback with regression tests."
+      }
+    ],
+    "failure_semantics": [
+      {
+        "id": "FAIL-1",
+        "statement": "HTTP 200 may communicate partial batch outcome; failure details must not invent successful persistence."
+      }
+    ]
+  },
+  "baseline_lock": {
+    "git_object_format": "sha1",
+    "base_commit": "939872e7f9c5a2a204c95b3f249087fa7a22c768",
+    "base_tree": "54db117e256c5e4e28469e62c15bbeb455e3ad46",
+    "policy_sha256": "ad0c9c1e2ae90949ee1dfebaa10c98f085ef260284daae61f4fe67d7b95c2529",
+    "specification_sha256": "1be4e256d9bf24578b56e8f77ce3e40909afc30fbc978c48191937732ab85b33"
+  },
+  "behavior": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "affected": {
+    "argv": [
+      "bash",
+      "ci/test.sh"
+    ],
+    "cwd": ".",
+    "timeout_seconds": 300,
+    "environment": {
+      "mode": "clean",
+      "pass": [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA"
+      ]
+    }
+  },
+  "regression": {
+    "mode": "red_green",
+    "command": {
+      "argv": [
+        "bash",
+        "ci/test.sh"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "environment": {
+        "mode": "clean",
+        "pass": [
+          "PATH",
+          "HOME",
+          "TMPDIR",
+          "TMP",
+          "TEMP",
+          "SystemRoot",
+          "COMSPEC",
+          "PATHEXT",
+          "USERPROFILE",
+          "LOCALAPPDATA"
+        ]
+      }
+    },
+    "baseline_exit_code": 1,
+    "baseline_output_contains": [
+      "test_backend_decision_reports_partial_outcome"
+    ]
+  }
+}
