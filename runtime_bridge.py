@@ -27,8 +27,12 @@ def clear_plugin_context(ctx: Any = None) -> None:
 
 
 def get_plugin_llm() -> Any:
+    return get_plugin_context().llm
+
+
+def get_plugin_context() -> Any:
     if _plugin_context is None:
         raise RuntimeError(
             "Magi Agent context is unavailable; enable the Agent plugin for this profile."
         )
-    return _plugin_context.llm
+    return _plugin_context

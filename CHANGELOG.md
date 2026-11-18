@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Declared the optional `llm.model_override` capability so Hermes can request and audit operator consent when a compaction model is configured; documented that this model setting does not change Hermes providers.
+- Added profile-scoped provider and model selectors to Stored memory, populated from the active Hermes profile's configured model catalog; selections are saved without manual model IDs.
+- Declared `llm.provider_override` and `llm.model_override` so Hermes can request and enforce consent for configured compaction routing.
 - Removed the global `sys.modules` alias used by the Agent/Desktop LLM bridge; backend discovery now reads only the plugin-owned module and fails closed on ambiguity or unload.
 - Replaced the private `MemoryStore._mutate` override with Hermes' public conditional `apply_batch(expected_entries=...)` API; older hosts refuse Apply without writing until Hermes PR #135901 is released.
 

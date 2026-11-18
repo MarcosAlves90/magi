@@ -36,6 +36,9 @@ assert store.add("memory", "Second durable detail, with extra redundant explanat
 
 runtime = object.__new__(HostRuntime)
 runtime.modules = {}
+runtime.loads = {}
+runtime.profiles = {}
+runtime.instance_modules = {}
 runtime.unload_callbacks = {}
 runtime.asgi_apps = {}
 runtime.refs = {}
@@ -68,13 +71,13 @@ load_params = {
     "plugin_key": "magi", "plugin_id": "magi", "name": "magi",
     "path": str(plugin_dir), "module_name": "hermes_plugins.magi",
     "manifest": {"name": "magi"},
-    "ctx_methods": ["register_command", "register_cli_command", "get_config"],
+    "ctx_methods": ["register_command", "register_cli_command", "get_config", "set_config"],
     "profile_name": "default",
 }
 request = {
     "dashboard_dir": str(plugin_dir / "dashboard"), "api_file": "plugin_api.py",
     "plugin": "magi", "method": "POST",
-    "path": "/memory/memory/compact/preview", "query": "", "body": b"",
+    "path": "/memory/memory/compact/preview", "query": "", "body": b"", "headers": [],
 }
 
 def preview():
@@ -87,6 +90,14 @@ try:
     assert ("magi", "register_command") in registrations
     assert preview()["success"] is True
     assert len(llm_calls) == 1
+    request.update(method="GET", path="/llm/options", body=b"")
+    options = decode(runtime.op_asgi(request), None)
+    assert options["status"] == 200, options
+    request.update(method="PUT", path="/llm/settings", body=b'{"provider":"","model":""}', headers=[["content-type", "application/json"]])
+    saved = decode(runtime.op_asgi(request), None)
+    assert saved["status"] == 200, saved
+    assert ("magi", "set_config") in registrations
+    request.update(method="POST", path="/memory/memory/compact/preview", body=b"")
     assert runtime.op_unload({"plugin_key": "magi"})["errors"] == []
     unavailable = preview()
     assert unavailable["success"] is False

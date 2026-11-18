@@ -65,6 +65,7 @@ def test_registers_supported_commands(tmp_path):
     assert "memory|user" in ctx.commands["memory-compact-preview"]["args_hint"]
     bridge = sys.modules[plugin.__name__ + ".runtime_bridge"]
     assert "_magi_runtime_bridge" not in sys.modules
+    assert bridge.get_plugin_context() is ctx
     assert bridge.get_plugin_llm() is ctx.llm
     assert len(ctx.unload_callbacks) == 1
     ctx.unload_callbacks[0]()
@@ -185,6 +186,28 @@ def test_compaction_preview_uses_configured_model(monkeypatch, tmp_path):
     assert result["success"] is True
     assert llm.calls[0]["model"] == "provider/compact-model"
     assert "provider" not in llm.calls[0]
+
+
+def test_compaction_preview_uses_configured_provider_and_model(monkeypatch, tmp_path):
+    plugin = load_plugin()
+    llm = FakeLlm(["fact one; fact two detail"])
+    ctx = FakeCtx({
+        "home_override": str(tmp_path),
+        "compaction_provider": "openai",
+        "compaction_model": "gpt-4.1-mini",
+    }, llm=llm)
+    store = FakePreviewStore(memory=[
+        "The first durable fact is fact one and this sentence contains unnecessary explanation.",
+        "The second durable fact is fact two with detail and this sentence repeats unnecessary context.",
+    ])
+    monkeypatch.setattr(plugin, "_memory_store", lambda: store)
+    plugin.register(ctx)
+
+    result = json.loads(ctx.commands["memory-compact-preview"]["handler"]("memory"))
+
+    assert result["success"] is True
+    assert llm.calls[0]["provider"] == "openai"
+    assert llm.calls[0]["model"] == "gpt-4.1-mini"
 
 
 def test_compaction_preview_retries_when_first_proposal_does_not_reduce_footprint(monkeypatch, tmp_path):
@@ -576,4 +599,4 @@ def test_setup_cli_and_cli_handler(tmp_path, capsys):
 
 def test_manifest_declares_optional_model_override_for_hermes_consent():
     manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
-    assert "capabilities:\n  - llm.model_override\n" in manifest
+    assert "capabilities:\n  - llm.provider_override\n  - llm.model_override\n" in manifest

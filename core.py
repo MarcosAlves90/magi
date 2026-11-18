@@ -164,6 +164,7 @@ def build_memory_compaction_preview(
     entries: Sequence[str],
     delimiter: str,
     model: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> Dict[str, Any]:
     if target not in {"memory", "user"}:
         return {"success": False, "error": "target must be 'memory' or 'user'."}
@@ -218,6 +219,8 @@ def build_memory_compaction_preview(
             }
             if model:
                 completion_kwargs["model"] = model
+            if provider:
+                completion_kwargs["provider"] = provider
             result = llm.complete_structured(
                 **completion_kwargs,
             )

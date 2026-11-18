@@ -104,10 +104,15 @@ def _compact_preview(ctx, raw_args: str) -> str:
     store = _memory_store()
     entries = list(store.memory_entries if target == "memory" else store.user_entries)
     try:
-        model = str(ctx.get_config("compaction_model", default="") or "").strip() or None
+        routing = ctx.get_config("compaction_routing", default={})
+        routing = routing if isinstance(routing, dict) else {}
+        model = str(routing.get("model") or ctx.get_config("compaction_model", default="") or "").strip() or None
+        provider = str(routing.get("provider") or ctx.get_config("compaction_provider", default="") or "").strip() or None
     except Exception:
-        model = None
-    result = build_memory_compaction_preview(ctx.llm, target, entries, _entry_delimiter(), model=model)
+        model = provider = None
+    result = build_memory_compaction_preview(
+        ctx.llm, target, entries, _entry_delimiter(), model=model, provider=provider,
+    )
     return json.dumps(result, ensure_ascii=False)
 
 

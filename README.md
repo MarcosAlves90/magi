@@ -26,16 +26,15 @@ Pending-write decisions and compaction previews work without an open chat sessio
 
 ## Configuration
 
-Set these options in the Magi plugin settings:
+These options are available in Magi plugin settings. Choose AI routing inside **Stored memory**:
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `compaction_model` | Empty | Model for AI compaction; empty uses the active/default Hermes model. |
 | `home_override` | Empty | Optional custom Hermes home directory; empty uses the active profile. |
 | `default_page_size` | `20` | Default number of pending writes listed. |
 | `max_page_size` | `100` | Maximum number of list/search results. |
 
-Choosing a specific `compaction_model` requires operator consent to Magi's declared `llm.model_override` capability (or the equivalent explicit Hermes permission `plugins.entries.magi.llm.allow_model_override`). Hermes also enforces any configured `allowed_models` restriction. The configured value is passed literally as `model=` to `ctx.llm` on Hermes' **active provider**; a `provider/model`-shaped string does not automatically switch providers.
+Choose an AI provider and one of its available models from **Stored memory → AI provider / Model**. The list comes from providers configured for the active Hermes profile; choices are saved to that profile. Returning to **Hermes default** clears the override. Provider and model overrides require the corresponding Magi capabilities to be granted in Hermes; Hermes also enforces configured model restrictions.
 
 ## Commands
 
@@ -70,7 +69,7 @@ Use the terminal for large records that may exceed chat message limits.
 
 - **Local reads:** Magi reads the active profile's pending-memory records and Hermes' `MEMORY.md` / `USER.md` stores. `home_override` can redirect these reads to a home directory you select.
 - **Changes:** Approval, rejection, entry edits and compaction require explicit user actions. Writes go through Hermes' native memory APIs; Magi does not edit the stores directly.
-- **AI access:** Compaction sends the selected memory content through Hermes' `ctx.llm` interface to the configured model/provider. Hermes owns provider credentials; Magi does not read or store them.
+- **AI access:** Compaction sends the selected memory content through Hermes' `ctx.llm` interface to the selected provider/model, or Hermes defaults. Hermes owns provider credentials; Magi does not read or store them.
 - **Other activity:** Magi makes no direct third-party network calls, launches no shell commands or subprocesses, runs no long-lived background jobs, and collects no telemetry or usage data. While its Desktop page is open, it polls the local plugin backend every five seconds.
 
 ## Development

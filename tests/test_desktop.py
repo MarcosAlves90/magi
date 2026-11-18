@@ -63,6 +63,9 @@ def test_unified_desktop_package_uses_documented_surfaces():
     assert "SIDEBAR_NAV_AREA" in source
     assert "id: 'magi'" in source
     assert "name: 'Magi'" in source
+    assert "AI provider" in source
+    assert "AI model" in source
+    assert "loadLlmOptions" in source
     assert "data: { path: '/magi'" in source
     assert "label: 'Magi'" in source
     assert "codicon: 'wand'" in source
@@ -726,6 +729,11 @@ def test_desktop_dashboard_uses_lightweight_reactive_ui_patterns():
 def test_backend_compaction_resolves_agent_bridge_without_global_alias(monkeypatch):
     """Model the two real Hermes imports sharing one isolated plugin host."""
     plugin_name = "hermes_plugins_magi_host_test"
+    bridge_path = (ROOT / "runtime_bridge.py").resolve()
+    for module_name, module in tuple(sys.modules.items()):
+        module_file = getattr(module, "__file__", None)
+        if module_name.endswith(".runtime_bridge") and isinstance(module_file, str) and Path(module_file).resolve() == bridge_path:
+            sys.modules.pop(module_name, None)
     spec = importlib.util.spec_from_file_location(
         plugin_name, ROOT / "__init__.py",
         submodule_search_locations=[str(ROOT)],
@@ -738,6 +746,9 @@ def test_backend_compaction_resolves_agent_bridge_without_global_alias(monkeypat
     class HostContext:
         def __init__(self):
             self.llm = llm
+
+        def get_config(self, key, default=None):
+            return default
 
         def register_command(self, *args, **kwargs):
             pass
@@ -784,6 +795,7 @@ def test_backend_generates_compaction_preview_without_a_chat_session(monkeypatch
     llm = FakeCompactionLlm(["first fact; second fact with detail"])
     monkeypatch.setattr(api, "_memory_store", lambda: store)
     monkeypatch.setattr(api, "_plugin_llm", lambda: llm, raising=False)
+    monkeypatch.setattr(api, "_llm_settings", lambda: {"provider": "", "model": ""})
 
     response = client_for(api).post("/memory/memory/compact/preview")
 
@@ -816,14 +828,89 @@ def test_backend_compaction_preview_uses_configured_model(monkeypatch):
     llm = FakeCompactionLlm(["first fact; second fact with detail"])
     monkeypatch.setattr(api, "_memory_store", lambda: store)
     monkeypatch.setattr(api, "_plugin_llm", lambda: llm, raising=False)
-    monkeypatch.setattr(api, "_settings", lambda: {"compaction_model": "provider/compact-model"})
+    monkeypatch.setattr(api, "_llm_settings", lambda: {
+        "provider": "openai", "model": "provider/compact-model",
+    })
 
     response = client_for(api).post("/memory/memory/compact/preview")
 
     assert response.status_code == 200
     assert response.json()["success"] is True
+    assert llm.calls[0]["provider"] == "openai"
     assert llm.calls[0]["model"] == "provider/compact-model"
-    assert "provider" not in llm.calls[0]
+
+
+def test_llm_options_returns_profile_provider_and_model_choices(monkeypatch):
+    api = load_api()
+    monkeypatch.setattr(api, "_llm_settings", lambda: {
+        "provider": "openai", "model": "gpt-4.1-mini",
+    })
+    monkeypatch.setattr(api, "_available_llm_options", lambda: [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini", "gpt-4.1"]
+    }])
+
+    response = client_for(api).get("/llm/options")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "providers": [{
+            "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini", "gpt-4.1"]
+        }],
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+    }
+
+
+def test_available_llm_options_maps_hermes_picker_catalog(monkeypatch):
+    from types import ModuleType
+
+    api = load_api()
+    inventory = ModuleType("hermes_cli.inventory")
+    setattr(inventory, "load_picker_context", lambda: "active-profile")
+    captured = {}
+
+    def build_models_payload(context, **kwargs):
+        captured["context"] = context
+        captured["kwargs"] = kwargs
+        return {"providers": [
+            {"slug": "openai", "name": "OpenAI", "models": ["gpt-4.1-mini", 7]},
+            {"slug": "empty", "name": "Empty", "models": []},
+            {"name": "Malformed", "models": ["ignored"]},
+        ]}
+
+    setattr(inventory, "build_models_payload", build_models_payload)
+    package = ModuleType("hermes_cli")
+    package.__path__ = []
+    monkeypatch.setitem(sys.modules, "hermes_cli", package)
+    monkeypatch.setitem(sys.modules, "hermes_cli.inventory", inventory)
+
+    assert api._available_llm_options() == [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini"]
+    }]
+    assert captured["context"] == "active-profile"
+    assert captured["kwargs"]["explicit_only"] is True
+    assert captured["kwargs"]["probe_custom_providers"] is False
+
+
+def test_llm_settings_save_only_accepts_active_profile_choices(monkeypatch):
+    api = load_api()
+    settings = []
+    monkeypatch.setattr(api, "_available_llm_options", lambda: [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini"]
+    }])
+    monkeypatch.setattr(api, "_plugin_context", lambda: SimpleNamespace(
+        set_config=lambda key, value: settings.append((key, value))
+    ))
+    client = client_for(api)
+
+    invalid = client.put("/llm/settings", json={"provider": "unknown", "model": "manual"})
+    valid = client.put("/llm/settings", json={"provider": "openai", "model": "gpt-4.1-mini"})
+
+    assert invalid.status_code == 400
+    assert valid.status_code == 200
+    assert settings == [
+        ("compaction_routing", {"provider": "openai", "model": "gpt-4.1-mini"}),
+    ]
 
 
 def test_backend_applies_compaction_as_one_stale_safe_batch(monkeypatch):

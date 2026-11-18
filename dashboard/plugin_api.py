@@ -54,6 +54,11 @@ class MemoryCompactionApplyRequest(BaseModel):
     entries: List[str]
 
 
+class LlmSettingsRequest(BaseModel):
+    provider: str = ""
+    model: str = ""
+
+
 class PendingDecisionRequest(BaseModel):
     action: str
 
@@ -160,6 +165,10 @@ def _plugin_llm() -> Any:
     Require an unambiguous module with the exact file path for this plugin;
     never select another profile or an unrelated plugin by name alone.
     """
+    return _plugin_context().llm
+
+
+def _plugin_context() -> Any:
     bridge_path = (_PLUGIN_ROOT / "runtime_bridge.py").resolve()
     bridges = [
         module for name, module in tuple(sys.modules.items())
@@ -171,7 +180,42 @@ def _plugin_llm() -> Any:
         raise RuntimeError(
             "Magi Agent context is unavailable or ambiguous; enable the Agent plugin for this profile."
         )
-    return bridges[0].get_plugin_llm()
+    return bridges[0].get_plugin_context()
+
+
+def _available_llm_options() -> List[Dict[str, Any]]:
+    """Return the active profile's configured provider/model choices from Hermes' picker catalog."""
+    from hermes_cli.inventory import build_models_payload, load_picker_context
+
+    payload = build_models_payload(
+        load_picker_context(), explicit_only=True, for_picker=True,
+        non_blocking_catalogs=True, probe_custom_providers=False,
+        probe_current_custom_provider=False,
+    )
+    return [
+        {
+            "id": str(row.get("slug") or ""),
+            "label": str(row.get("name") or row.get("slug") or ""),
+            "models": [str(model) for model in row.get("models", []) if isinstance(model, str)],
+        }
+        for row in payload.get("providers", [])
+        if row.get("slug") and row.get("models")
+    ]
+
+
+def _llm_settings() -> Dict[str, str]:
+    ctx = _plugin_context()
+    routing = ctx.get_config("compaction_routing", default={})
+    if not isinstance(routing, dict):
+        routing = {}
+    return {
+        "provider": str(
+            routing.get("provider") or ctx.get_config("compaction_provider", default="") or ""
+        ),
+        "model": str(
+            routing.get("model") or ctx.get_config("compaction_model", default="") or ""
+        ),
+    }
 
 
 def _memory_target(store: Any, target: str) -> Dict[str, Any]:
@@ -452,8 +496,41 @@ def preview_memory_compaction(target: str) -> Dict[str, Any]:
         llm = _plugin_llm()
     except Exception as exc:
         return {"success": False, "error": f"AI compaction unavailable: {exc}"}
-    model = str(_settings().get("compaction_model") or "").strip() or None
-    return build_memory_compaction_preview(llm, target, entries, _entry_delimiter(), model=model)
+    settings = _llm_settings()
+    model = settings["model"] or None
+    provider = settings["provider"] or None
+    return build_memory_compaction_preview(
+        llm, target, entries, _entry_delimiter(), model=model, provider=provider,
+    )
+
+
+@router.get("/llm/options")
+def llm_options() -> Dict[str, Any]:
+    providers = _available_llm_options()
+    settings = _llm_settings()
+    provider = settings["provider"]
+    selected = next((row for row in providers if row["id"] == provider), None)
+    model = settings["model"]
+    if not selected or model not in selected["models"]:
+        provider, model = "", ""
+    return {"providers": providers, "provider": provider, "model": model}
+
+
+@router.put("/llm/settings")
+def save_llm_settings(body: LlmSettingsRequest) -> Dict[str, Any]:
+    provider, model = body.provider.strip(), body.model.strip()
+    if bool(provider) != bool(model):
+        raise HTTPException(status_code=400, detail="Select both a provider and model, or clear both to use Hermes defaults.")
+    if provider and not any(
+        row["id"] == provider and model in row["models"] for row in _available_llm_options()
+    ):
+        raise HTTPException(status_code=400, detail="Choose a provider and model from the active profile's available list.")
+    try:
+        ctx = _plugin_context()
+        ctx.set_config("compaction_routing", {"provider": provider, "model": model})
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not save Magi LLM settings.") from None
+    return {"success": True, "provider": provider, "model": model}
 
 
 @router.post("/memory/{target}/compact")

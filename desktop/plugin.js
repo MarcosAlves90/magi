@@ -636,7 +636,7 @@ function PendingWritesPage({ loadRecords, loadDetail, runDecision, source, onOpe
   })
 }
 
-function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, source }) {
+function StoredMemoryPage({ loadStoredMemory, loadLlmOptions, saveLlmSettings, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, source }) {
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
@@ -656,6 +656,13 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     queryFn: loadStoredMemory,
     refetchInterval: 5_000
   })
+  const llmOptions = useQuery({
+    queryKey: [source, 'llm-options'],
+    queryFn: loadLlmOptions
+  })
+  const [provider, setProvider] = useState('')
+  const [model, setModel] = useState('')
+  const [savingLlmSettings, setSavingLlmSettings] = useState(false)
 
   const targetData = stored.data?.targets?.[target] || { count: 0, entries: [] }
   const entries = targetData.entries || []
@@ -675,6 +682,12 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       : filtered[0] || entries[0] || null
   const isDirty = Boolean(current && draft !== current.content)
   const targetLabel = target === 'memory' ? 'MEMORY.md' : 'USER.md'
+  const modelOptions = llmOptions.data?.providers?.find(item => item.id === provider)?.models || []
+
+  useEffect(() => {
+    setProvider(llmOptions.data?.provider || '')
+    setModel(llmOptions.data?.model || '')
+  }, [llmOptions.data?.provider, llmOptions.data?.model])
 
   useEffect(() => {
     if (!adding) setDraft(current?.content || '')
@@ -828,6 +841,20 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     }
   }
 
+  const saveModelSettings = async () => {
+    setSavingLlmSettings(true)
+    setFeedback(null)
+    try {
+      await saveLlmSettings(provider, model)
+      await llmOptions.refetch()
+      setFeedback({ kind: 'success', message: 'AI provider and model saved for this Hermes profile.' })
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setSavingLlmSettings(false)
+    }
+  }
+
   if (stored.isError) {
     return jsxs('div', {
       className: 'flex h-full flex-col items-center justify-center gap-3 p-8 text-center',
@@ -889,6 +916,55 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
                   jsx('div', { className: 'mt-1.5 text-[0.6875rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` })
                 ]
               }, 'budget')
+            ]
+          }),
+          jsxs('div', {
+            className: 'mt-3 flex flex-wrap items-end gap-2 border-t border-(--ui-stroke-secondary) pt-3',
+            children: [
+              jsxs('label', {
+                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
+                children: [
+                  jsx('span', { children: 'AI provider' }),
+                  jsx('select', {
+                    'aria-label': 'AI provider',
+                    value: provider,
+                    disabled: llmOptions.isLoading || savingLlmSettings,
+                    onChange: event => {
+                      const next = event.target.value
+                      setProvider(next)
+                      setModel(llmOptions.data?.providers?.find(item => item.id === next)?.models?.[0] || '')
+                    },
+                    className: 'min-w-40 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)',
+                    children: [
+                      jsx('option', { value: '', children: 'Hermes default' }, 'default'),
+                      ...(llmOptions.data?.providers || []).map(item => jsx('option', { value: item.id, children: item.label }, item.id))
+                    ]
+                  })
+                ]
+              }),
+              jsxs('label', {
+                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
+                children: [
+                  jsx('span', { children: 'Model' }),
+                  jsx('select', {
+                    'aria-label': 'AI model',
+                    value: model,
+                    disabled: !provider || savingLlmSettings || !modelOptions.length,
+                    onChange: event => setModel(event.target.value),
+                    className: 'min-w-48 max-w-full rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)',
+                    children: modelOptions.map(item => jsx('option', { value: item, children: item }, item))
+                  })
+                ]
+              }),
+              jsx(ActionButton, {
+                disabled: savingLlmSettings || llmOptions.isLoading || (provider === (llmOptions.data?.provider || '') && model === (llmOptions.data?.model || '')),
+                onClick: saveModelSettings,
+                children: savingLlmSettings ? 'Saving…' : 'Save AI settings'
+              }),
+              jsx('span', {
+                className: 'basis-full text-[0.6875rem] text-(--ui-text-quaternary)',
+                children: llmOptions.isError ? 'Could not load this profile’s provider list.' : 'Choices come from providers configured for this Hermes profile. Overrides require Hermes consent.'
+              })
             ]
           })
         ]
@@ -1268,6 +1344,8 @@ function MagiPage(props) {
             ? jsx(PendingWritesPage, { ...props, onOpenStoredMemory: () => setMode('stored') })
             : jsx(StoredMemoryPage, {
                 loadStoredMemory: props.loadStoredMemory,
+                loadLlmOptions: props.loadLlmOptions,
+                saveLlmSettings: props.saveLlmSettings,
                 saveStoredMemory: props.saveStoredMemory,
                 addStoredMemory: props.addStoredMemory,
                 deleteStoredMemory: props.deleteStoredMemory,
@@ -1289,6 +1367,11 @@ export default {
     const loadRecords = () => ctx.rest('/records')
     const loadDetail = id => ctx.rest(`/records/${encodeURIComponent(id)}`)
     const loadStoredMemory = () => ctx.rest('/memory')
+    const loadLlmOptions = () => ctx.rest('/llm/options')
+    const saveLlmSettings = (provider, model) => ctx.rest('/llm/settings', {
+      method: 'PUT',
+      body: { provider, model }
+    })
     const saveStoredMemory = (target, oldText, content) =>
       ctx.rest(`/memory/${encodeURIComponent(target)}`, {
         method: 'PUT',
@@ -1335,6 +1418,8 @@ export default {
             loadRecords,
             loadDetail,
             loadStoredMemory,
+            loadLlmOptions,
+            saveLlmSettings,
             saveStoredMemory,
             addStoredMemory,
             deleteStoredMemory,
