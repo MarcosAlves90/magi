@@ -75,7 +75,7 @@ jobs:
           hermes_dir="$RUNNER_TEMP/hermes-agent"
           mkdir -p "$hermes_dir"
           git -C "$hermes_dir" init -q
-          git -C "$hermes_dir" remote add origin https://github.com/MarcosAlves90/hermes-agent.git
+          git -C "$hermes_dir" remote add origin https://github.com/NousResearch/hermes-agent.git
           git -C "$hermes_dir" fetch --depth=1 origin "$HERMES_REF"
           git -C "$hermes_dir" checkout -q --detach FETCH_HEAD
           test "$(git -C "$hermes_dir" rev-parse HEAD)" = "$HERMES_REF"

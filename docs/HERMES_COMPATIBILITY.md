@@ -23,7 +23,7 @@ This document distinguishes implemented checks from upstream dependencies. A gre
 
 ## Release conditions
 
-1. The conditional memory API must be accepted in official Hermes and available in a published release; pin CI to an official immutable Hermes SHA instead of the temporary `MarcosAlves90/hermes-agent` fork.
+1. The conditional memory API must be accepted in official Hermes and available in a published release. CI now fetches its current immutable pins from the public `NousResearch/hermes-agent` repository; after release, update the matrix to the official release SHA and rerun `./verify.sh`.
 2. Align `requires_hermes`, release notes and optional compaction availability with the released host interface, then run `./verify.sh` against that exact official version.
 3. Test the installed plugin in Desktop with at least two independent profiles, verify provider/model selections stay isolated, and verify real consent-denied provider and model overrides; CI host tests use fakes and cannot establish end-to-end provider behaviour.
 4. Resolve or receive a documented SDK ruling for the remaining bridge coupling in [Hermes #135903](https://github.com/NousResearch/hermes-agent/issues/135903) before asserting full, future-proof public-surface conformance.
