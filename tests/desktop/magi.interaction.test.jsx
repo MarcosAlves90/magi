@@ -186,7 +186,13 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     fireEvent.click(btn('Stored memory Durable context'))
     await screen.findByRole('heading', { name: 'Stored memory' })
     const modelSelect = await screen.findByRole('combobox', { name: 'AI model' })
-    fireEvent.change(modelSelect, { target: { value: 'gpt-4o-mini' } })
+    await waitFor(() => {
+      expect(modelSelect.disabled).toBe(false)
+      expect(modelSelect.value).toBe('gpt-4.1-mini')
+    })
+    const user = userEvent.setup()
+    await user.selectOptions(modelSelect, 'gpt-4o-mini')
+    await waitFor(() => expect(modelSelect.value).toBe('gpt-4o-mini'))
     fireEvent.click(screen.getByRole('button', { name: 'Save AI settings' }))
 
     await waitFor(() => expect(state.llmSaves).toEqual([{ provider: 'openai', model: 'gpt-4o-mini' }]))
