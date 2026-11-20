@@ -28,10 +28,11 @@ function fixture() {
       if (path === '/records' && !options.method) return { records: [...state.records], count: state.records.length, issues: [] }
       if (path === '/llm/options' && !options.method) return { ...state.llmOptions }
       if (path === '/llm/settings' && options.method === 'PUT') {
-        state.llmSaves.push({ ...options.body })
-        state.llmOptions = { ...state.llmOptions, ...options.body }
+        const body = structuredClone(options.body)
+        state.llmSaves.push(body)
+        state.llmOptions = { ...state.llmOptions, ...body }
         delete state.llmOptions.legacy_override
-        return { success: true, ...options.body }
+        return { success: true, ...body }
       }
       const detail = path.match(/^\/records\/(.+)$/)
       if (detail && !options.method) {
@@ -172,6 +173,23 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
 
     await waitFor(() => expect(state.llmSaves).toEqual([{ provider: '', model: '' }]))
     await waitFor(() => expect(screen.queryByText(/Legacy override still active/)).toBeNull())
+  })
+
+  it('saves a changed model using cloneable provider and model values', async () => {
+    const { mount, state } = fixture()
+    state.llmOptions = {
+      providers: [{ id: 'openai', label: 'OpenAI', models: ['gpt-4.1-mini', 'gpt-4o-mini'] }],
+      provider: 'openai',
+      model: 'gpt-4.1-mini'
+    }
+    mount()
+    fireEvent.click(btn('Stored memory Durable context'))
+    await screen.findByRole('heading', { name: 'Stored memory' })
+    const modelSelect = await screen.findByRole('combobox', { name: 'AI model' })
+    fireEvent.change(modelSelect, { target: { value: 'gpt-4o-mini' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save AI settings' }))
+
+    await waitFor(() => expect(state.llmSaves).toEqual([{ provider: 'openai', model: 'gpt-4o-mini' }]))
   })
 
   it('keeps non-obvious memory actions described by accessible tooltips instead of a side notice', async () => {

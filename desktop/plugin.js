@@ -1795,7 +1795,7 @@ function StoredMemoryPage({ loadStoredMemory, loadLlmOptions, saveLlmSettings, s
               }),
               jsx(ActionButton, {
                 disabled: savingLlmSettings || llmOptions.isLoading || (provider === (llmOptions.data?.provider || '') && model === (llmOptions.data?.model || '')),
-                onClick: saveModelSettings,
+                onClick: () => saveModelSettings(),
                 children: savingLlmSettings ? 'Saving…' : 'Save AI settings'
               }),
               jsx('span', {
