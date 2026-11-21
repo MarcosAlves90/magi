@@ -25,7 +25,7 @@ flowchart LR
 
 ## Permissions and model routing
 
-Magi does not read or store provider credentials; Hermes owns credentials and LLM permission checks. In Stored memory, users may select a provider/model from the active profile's configured list. Overrides require the corresponding `llm.provider_override` and `llm.model_override` capabilities; Hermes also enforces configured `allowed_models`. If a host cannot probe capabilities, explicit overrides fail closed while the active/default model remains available.
+Magi does not read or store provider credentials; Hermes owns credentials and LLM permission checks. The native **Settings → Plugins → Magi** form accepts a profile-scoped provider/model JSON object; the form does not display dynamic catalog choices. Incomplete or unavailable pairs fall back to Hermes defaults. Overrides require the corresponding `llm.provider_override` and `llm.model_override` capabilities; Hermes also enforces configured `allowed_models`. If a host cannot probe capabilities, explicit overrides fail closed while the active/default model remains available. See the [usage guide](using-magi.md#settings-and-upgrades) for configuration details.
 
 Pending-write approval, rejection, stored-memory edits, import, export, and compaction apply are user-initiated. Magi does not edit `MEMORY.md` or `USER.md` directly. It makes no direct third-party network calls, launches no shell commands or subprocesses, and collects no telemetry or usage data. While its Desktop page is open, it polls the local plugin backend every five seconds.
 
