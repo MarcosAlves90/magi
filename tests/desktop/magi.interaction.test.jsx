@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { host } from '@hermes/plugin-sdk'
 import plugin from '../../desktop/plugin.js'
 
 beforeEach(() => vi.stubGlobal('fetch', () => { throw new Error('Unexpected external network access') }))
@@ -14,11 +15,40 @@ function fixture() {
     ],
     entries: { memory: ['One durable fact', 'Another fact'], user: ['User preference'] },
     requests: [], failNext: new Map(), fingerprint: 'fingerprint-1',
-    llmOptions: { providers: [], provider: '', model: '' }, llmSaves: []
+    profileRequests: [],
+    profileSettings: {
+      'test-profile': { home_override: '', default_page_size: 20, max_page_size: 100, compaction_routing: { provider: 'openai', model: 'gpt-active' } },
+      'other-profile': { home_override: '', default_page_size: 20, max_page_size: 100, compaction_routing: { provider: '', model: '' } }
+    },
+    profileRoutes: [
+      { connectionId: 'local-connection', mode: 'local', profile: 'test-profile', targetProfile: 'test-profile', primary: true },
+      { connectionId: 'remote-connection', mode: 'remote', profile: 'desktop-route', targetProfile: 'other-profile' }
+    ]
+  }
+  host.state.profile.get = () => 'test-profile'
+  host.profileRoutes = async () => [...state.profileRoutes]
+  host.requestProfile = async (route, method, params) => {
+    state.profileRequests.push({ route: structuredClone(route), method, params: structuredClone(params) })
+    if (method === 'model.options') {
+      return { providers: route.targetProfile === 'other-profile'
+        ? [{ slug: 'anthropic', name: 'Anthropic', models: ['claude-profile', 'claude-fast'] }]
+        : [{ slug: 'openai', name: 'OpenAI', models: ['gpt-active'] }] }
+    }
+    if (method === 'plugins.manage' && params.action === 'list') {
+      const settings = state.profileSettings[route.targetProfile]
+      return { plugins: [{ key: 'magi', settings_schema: Object.entries(settings).map(([key, value]) => ({ key, value })) }] }
+    }
+    if (method === 'plugins.manage' && params.action === 'settings') {
+      const settings = state.profileSettings[route.targetProfile]
+      state.profileSettings[route.targetProfile] = { ...settings, ...structuredClone(params.values) }
+      return { ok: true }
+    }
+    throw new Error(`Unexpected profile request: ${method}`)
   }
   const ctx = {
     source: 'test-profile',
     registerMany(registrations) { ctx.registrations = registrations },
+    registerSettingsPage(page) { ctx.settingsPage = page },
     async rest(path, options = {}) {
       state.requests.push({ path, method: options.method || 'GET', body: options.body })
       if (state.failNext.get(path)) {
@@ -93,7 +123,15 @@ function fixture() {
   }
   plugin.register(ctx)
   const route = ctx.registrations.find(item => item.area === 'routes' && item.data.path === '/magi')
-  return { state, ctx, mount: () => render(route.render()) }
+  return {
+    state,
+    ctx,
+    mount: () => render(route.render()),
+    mountSettings: () => {
+      expect(ctx.settingsPage, 'dedicated Magi settings page is registered').toBeTruthy()
+      return render(ctx.settingsPage.render())
+    }
+  }
 }
 
 function btn(name) { return screen.getByRole('button', { name: name.includes(' ') ? new RegExp(name.replaceAll(' ', '\\s*')) : name, exact: true }) }
@@ -161,41 +199,77 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     expect(await screen.findByText(/Entry sizes \(characters\)/)).toBeTruthy()
   })
 
-  it('shows and clears a legacy model-only override from the profile selector', async () => {
-    const { mount, state } = fixture()
-    state.llmOptions.legacy_override = { provider: '', model: 'old-custom-model' }
+  it('moves model controls out of the stored-memory workspace', async () => {
+    const { mount } = fixture()
     mount()
     fireEvent.click(btn('Stored memory Durable context'))
     await screen.findByRole('heading', { name: 'Stored memory' })
 
-    expect((await screen.findByRole('status')).textContent).toMatch(/Legacy override still active: old-custom-model/)
-    fireEvent.click(screen.getByRole('button', { name: 'Use Hermes defaults' }))
-
-    await waitFor(() => expect(state.llmSaves).toEqual([{ provider: '', model: '' }]))
-    await waitFor(() => expect(screen.queryByText(/Legacy override still active/)).toBeNull())
+    expect(screen.queryByRole('combobox', { name: 'AI provider' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'AI model' })).toBeNull()
   })
 
-  it('saves a changed model using cloneable provider and model values', async () => {
-    const { mount, state } = fixture()
-    state.llmOptions = {
-      providers: [{ id: 'openai', label: 'OpenAI', models: ['gpt-4.1-mini', 'gpt-4o-mini'] }],
-      provider: 'openai',
-      model: 'gpt-4.1-mini'
-    }
-    mount()
-    fireEvent.click(btn('Stored memory Durable context'))
-    await screen.findByRole('heading', { name: 'Stored memory' })
-    const modelSelect = await screen.findByRole('combobox', { name: 'AI model' })
-    await waitFor(() => {
-      expect(modelSelect.disabled).toBe(false)
-      expect(modelSelect.value).toBe('gpt-4.1-mini')
-    })
-    const user = userEvent.setup()
-    await user.selectOptions(modelSelect, 'gpt-4o-mini')
-    await waitFor(() => expect(modelSelect.value).toBe('gpt-4o-mini'))
-    fireEvent.click(screen.getByRole('button', { name: 'Save AI settings' }))
+  it('renders the dedicated Magi settings page with profile-scoped configuration controls', async () => {
+    const { mountSettings } = fixture()
+    mountSettings()
 
-    await waitFor(() => expect(state.llmSaves).toEqual([{ provider: 'openai', model: 'gpt-4o-mini' }]))
+    expect(await screen.findByRole('heading', { name: 'Magi settings' })).toBeTruthy()
+    expect(screen.getByText('Configuring profile: test-profile')).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Hermes profile' }).value).toContain('test-profile')
+    expect(await screen.findByRole('textbox', { name: 'Hermes home override' })).toBeTruthy()
+    expect(screen.getByRole('spinbutton', { name: 'Default page size' })).toBeTruthy()
+    expect(screen.getByRole('spinbutton', { name: 'Maximum page size' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'AI provider' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'AI model' })).toBeTruthy()
+  })
+
+  it('rejects page sizes that the backend would alter', async () => {
+    const { mountSettings, state } = fixture()
+    mountSettings()
+    const user = userEvent.setup()
+    const size = await screen.findByRole('spinbutton', { name: 'Default page size' })
+    await user.clear(size)
+    await user.type(size, '-1')
+    expect(screen.getByRole('button', { name: 'Save AI settings' }).disabled).toBe(true)
+    expect(state.profileSettings['test-profile'].default_page_size).toBe(20)
+  })
+
+  it('loads and saves the selected profile catalog without switching the active profile', async () => {
+    const { mountSettings, state } = fixture()
+    mountSettings()
+    const user = userEvent.setup()
+    const profileSelect = await screen.findByRole('combobox', { name: 'Hermes profile' })
+    const otherProfile = screen.getByRole('option', { name: 'other-profile' })
+    await user.selectOptions(profileSelect, otherProfile.value)
+
+    await screen.findByText('Configuring profile: other-profile')
+    const providerSelect = screen.getByRole('combobox', { name: 'AI provider' })
+    await waitFor(() => expect(within(providerSelect).getByRole('option', { name: 'Anthropic' })).toBeTruthy())
+    expect(within(providerSelect).queryByRole('option', { name: 'OpenAI' })).toBeNull()
+    await user.selectOptions(providerSelect, 'anthropic')
+    const modelSelect = screen.getByRole('combobox', { name: 'AI model' })
+    expect(within(modelSelect).getByRole('option', { name: 'claude-profile' })).toBeTruthy()
+    expect(within(modelSelect).queryByRole('option', { name: 'gpt-active' })).toBeNull()
+
+    const pageSize = screen.getByRole('spinbutton', { name: 'Default page size' })
+    await user.clear(pageSize)
+    await user.type(pageSize, '30')
+    fireEvent.change(modelSelect, { target: { value: 'not-offered-by-profile' } })
+    expect(screen.getByRole('button', { name: 'Save AI settings' }).disabled).toBe(true)
+    expect(state.profileSettings['other-profile'].compaction_routing.provider).toBe('')
+
+    await user.selectOptions(modelSelect, 'claude-profile')
+    const save = screen.getByRole('button', { name: 'Save AI settings' })
+    await waitFor(() => expect(save.disabled).toBe(false))
+    await user.click(save)
+    await waitFor(() => expect(state.profileSettings['other-profile']).toMatchObject({
+      default_page_size: 30,
+      compaction_routing: { provider: 'anthropic', model: 'claude-profile' }
+    }))
+    expect(state.profileSettings['test-profile'].compaction_routing).toEqual({ provider: 'openai', model: 'gpt-active' })
+    expect(state.profileRequests.filter(request => request.params.profile === 'other-profile')
+      .every(request => request.route.connectionId === 'remote-connection' && request.route.profile === 'desktop-route' && request.route.targetProfile === 'other-profile')).toBe(true)
+    expect(host.state.profile.get()).toBe('test-profile')
   })
 
   it('keeps non-obvious memory actions described by accessible tooltips instead of a side notice', async () => {

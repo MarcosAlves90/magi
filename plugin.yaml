@@ -25,3 +25,8 @@ config_schema:
     default: 100
     label: "Maximum page size"
     description: "Upper bound for list/find result counts."
+  compaction_routing:
+    type: dict
+    default: {}
+    label: "AI model routing"
+    description: "Managed with the provider and model selectors on Magi's Settings page."

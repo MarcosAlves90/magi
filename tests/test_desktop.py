@@ -1848,10 +1848,10 @@ disk.load_from_disk()
 assert disk.memory_entries == ["fact"]
 assert "_mutate" not in vars(store)
 '''
-    env = {**os.environ, "HERMES_HOME": str(tmp_path),
+    env = {**os.environ, "HERMES_HOME": str(tmp_path), "HERMES_DISABLE_LAZY_INSTALLS": "1",
            "HERMES_NATIVE_ROOT": str(hermes_root), "MAGI_REPO_ROOT": str(ROOT)}
     result = subprocess.run(
-        ["uv", "run", "--with", "fastapi>=0.115,<1", "--with", "httpx>=0.27,<1", "python", "-c", code],
+        ["uv", "run", "--with", "fastapi>=0.115,<1", "--with", "httpx>=0.27,<1", "--with", "ruamel.yaml", "python", "-c", code],
         cwd=ROOT, env=env, capture_output=True, text=True, timeout=45, check=False,
     )
     assert result.returncode == 0, result.stderr

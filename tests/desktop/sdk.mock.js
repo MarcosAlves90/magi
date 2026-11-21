@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const ROUTES_AREA = 'routes'
 export const SIDEBAR_NAV_AREA = 'sidebar'
+export const host = {
+  state: { profile: { get: () => 'test-profile' } },
+  profileRoutes: async () => [],
+  requestProfile: async () => { throw new Error('Unexpected profile request') }
+}
 
 export function useQuery({ queryKey, queryFn, enabled = true }) {
   const [state, setState] = useState({ data: undefined, isLoading: enabled, isFetching: enabled, isError: false })

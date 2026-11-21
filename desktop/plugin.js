@@ -1,4 +1,4 @@
-import { ROUTES_AREA, SIDEBAR_NAV_AREA, useQuery } from '@hermes/plugin-sdk'
+import { ROUTES_AREA, SIDEBAR_NAV_AREA, host, useQuery } from '@hermes/plugin-sdk'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
@@ -1211,7 +1211,7 @@ function TransferDropdown({ target, stored, importing, exportMemory, onImportTri
   }, 'transfer-dropdown')
 }
 
-function StoredMemoryPage({ loadStoredMemory, loadLlmOptions, saveLlmSettings, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
+function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory, deleteStoredMemory, requestCompaction, applyCompaction, previewMemoryImport, applyMemoryImport, analyzeOrganization, requestSemanticReview, source, navigationGuard }) {
   const compactViewport = useCompactViewport()
   const [target, setTarget] = useState('memory')
   const [search, setSearch] = useState('')
@@ -1247,20 +1247,6 @@ function StoredMemoryPage({ loadStoredMemory, loadLlmOptions, saveLlmSettings, s
     queryFn: loadStoredMemory,
     refetchInterval: 5_000
   })
-  const llmOptions = useQuery({
-    queryKey: [source, 'llm-options'],
-    queryFn: loadLlmOptions
-  })
-  const [provider, setProvider] = useState('')
-  const [model, setModel] = useState('')
-  const [savingLlmSettings, setSavingLlmSettings] = useState(false)
-  const modelOptions = llmOptions.data?.providers?.find(item => item.id === provider)?.models || []
-
-  useEffect(() => {
-    setProvider(llmOptions.data?.provider || '')
-    setModel(llmOptions.data?.model || '')
-  }, [llmOptions.data?.provider, llmOptions.data?.model])
-
   const targetData = stored.data?.targets?.[target] || { count: 0, entries: [] }
   const entries = targetData.entries || []
   const query = search.trim().toLocaleLowerCase()
@@ -1658,19 +1644,6 @@ function StoredMemoryPage({ loadStoredMemory, loadLlmOptions, saveLlmSettings, s
     }
   }
 
-  const saveModelSettings = async (nextProvider = provider, nextModel = model) => {
-    setSavingLlmSettings(true)
-    setFeedback(null)
-    try {
-      await saveLlmSettings(nextProvider, nextModel)
-      await llmOptions.refetch()
-      setFeedback({ kind: 'success', message: 'AI provider and model saved for this Hermes profile.' })
-    } catch (error) {
-      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
-    } finally {
-      setSavingLlmSettings(false)
-    }
-  }
 
   if (stored.isError) {
     return jsxs('div', {
@@ -1753,69 +1726,6 @@ function StoredMemoryPage({ loadStoredMemory, loadLlmOptions, saveLlmSettings, s
                   jsx('div', { className: 'mt-1 text-[0.625rem] text-(--ui-text-tertiary)', children: targetData.usage_percent >= 80 ? 'Consider compacting soon' : `${Math.max(0, (targetData.char_limit ?? 0) - (targetData.used_chars ?? 0))} chars free` }),
                 ]
               }, 'budget')
-            ]
-          }),
-          jsxs('div', {
-            className: 'mt-3 flex flex-wrap items-end gap-2 border-t border-(--ui-stroke-secondary) pt-3',
-            children: [
-              jsxs('label', {
-                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
-                children: [
-                  jsx('span', { children: 'AI provider' }),
-                  jsx('select', {
-                    'aria-label': 'AI provider',
-                    value: provider,
-                    disabled: llmOptions.isLoading || savingLlmSettings,
-                    onChange: event => {
-                      const next = event.target.value
-                      setProvider(next)
-                      setModel(llmOptions.data?.providers?.find(item => item.id === next)?.models?.[0] || '')
-                    },
-                    className: 'min-w-40 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)',
-                    children: [
-                      jsx('option', { value: '', children: 'Hermes default' }, 'default'),
-                      ...(llmOptions.data?.providers || []).map(item => jsx('option', { value: item.id, children: item.label }, item.id))
-                    ]
-                  })
-                ]
-              }),
-              jsxs('label', {
-                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
-                children: [
-                  jsx('span', { children: 'Model' }),
-                  jsx('select', {
-                    'aria-label': 'AI model',
-                    value: model,
-                    disabled: !provider || savingLlmSettings || !modelOptions.length,
-                    onChange: event => setModel(event.target.value),
-                    className: 'min-w-48 max-w-full rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)',
-                    children: modelOptions.map(item => jsx('option', { value: item, children: item }, item))
-                  })
-                ]
-              }),
-              jsx(ActionButton, {
-                disabled: savingLlmSettings || llmOptions.isLoading || (provider === (llmOptions.data?.provider || '') && model === (llmOptions.data?.model || '')),
-                onClick: () => saveModelSettings(),
-                children: savingLlmSettings ? 'Saving…' : 'Save AI settings'
-              }),
-              jsx('span', {
-                className: 'basis-full text-[0.6875rem] text-(--ui-text-quaternary)',
-                children: llmOptions.isError ? 'Could not load this profile’s provider list.' : 'Choices come from providers configured for this Hermes profile. Overrides require Hermes consent.'
-              }),
-              llmOptions.data?.legacy_override ? jsxs('div', {
-                role: 'status',
-                className: 'basis-full flex flex-wrap items-center gap-2 text-[0.6875rem] text-(--ui-text-secondary)',
-                children: [
-                  jsx('span', {
-                    children: `Legacy override still active: ${llmOptions.data.legacy_override.provider ? `${llmOptions.data.legacy_override.provider} / ` : ''}${llmOptions.data.legacy_override.model || 'unknown model'}.`
-                  }),
-                  jsx(ActionButton, {
-                    disabled: savingLlmSettings || llmOptions.isLoading,
-                    onClick: () => saveModelSettings('', ''),
-                    children: savingLlmSettings ? 'Saving…' : 'Use Hermes defaults'
-                  })
-                ]
-              }) : null
             ]
           })
         ]
@@ -2620,6 +2530,238 @@ function HistoryPage({ loadHistory, clearHistory, source }) {
 }
 
 
+function profileRouteKey(route) {
+  return JSON.stringify([route.connectionId, route.profile, route.targetProfile])
+}
+
+function loadLlmOptions(route) {
+  return host.requestProfile(route, 'model.options', { profile: route.targetProfile, explicit_only: true })
+}
+
+function MagiSettingsPage() {
+  const profileRoutes = useQuery({ queryKey: ['magi-settings', 'profiles'], queryFn: () => host.profileRoutes() })
+  const routes = Array.isArray(profileRoutes.data) ? profileRoutes.data : []
+  const [selectedRouteKey, setSelectedRouteKey] = useState('')
+  const activeProfile = host.state.profile.get()
+  const selectedRoute = routes.find(route => profileRouteKey(route) === selectedRouteKey)
+    || routes.find(route => route.profile === activeProfile)
+    || routes.find(route => route.targetProfile === activeProfile)
+    || routes.find(route => route.primary)
+    || routes[0]
+  const selectedKey = selectedRoute ? profileRouteKey(selectedRoute) : ''
+  const profileData = useQuery({
+    queryKey: ['magi-settings', selectedKey],
+    enabled: Boolean(selectedRoute),
+    queryFn: async () => {
+      const profile = selectedRoute.targetProfile
+      const [llmOptions, result] = await Promise.all([
+        loadLlmOptions(selectedRoute),
+        host.requestProfile(selectedRoute, 'plugins.manage', { action: 'list', profile })
+      ])
+      const plugin = result?.plugins?.find(item => item.key === 'magi')
+      if (!plugin) throw new Error(`Magi is not installed for profile ${profile}.`)
+      const settings = Object.fromEntries((plugin.settings_schema || []).map(field => [field.key, field.value]))
+      return {
+        routeKey: selectedKey,
+        llmOptions,
+        settings: {
+          home_override: settings.home_override ?? '',
+          default_page_size: settings.default_page_size ?? 20,
+          max_page_size: settings.max_page_size ?? 100,
+          compaction_routing: settings.compaction_routing || {}
+        }
+      }
+    }
+  })
+  const dataReady = profileData.data?.routeKey === selectedKey
+  const [form, setForm] = useState({ home_override: '', default_page_size: '20', max_page_size: '100', provider: '', model: '' })
+  const [savedForm, setSavedForm] = useState(form)
+  const [formRoute, setFormRoute] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState(null)
+
+  useEffect(() => {
+    if (!dataReady) return
+    const settings = profileData.data.settings
+    const next = {
+      home_override: String(settings.home_override),
+      default_page_size: String(settings.default_page_size),
+      max_page_size: String(settings.max_page_size),
+      provider: String(settings.compaction_routing.provider || ''),
+      model: String(settings.compaction_routing.model || '')
+    }
+    setForm(next)
+    setSavedForm(next)
+    setFormRoute(selectedKey)
+    setFeedback(null)
+  }, [dataReady, profileData.data])
+
+  const providers = (profileData.data?.llmOptions?.providers || []).filter(item =>
+    typeof item.slug === 'string' && Array.isArray(item.models)
+  )
+  const provider = providers.find(item => item.slug === form.provider)
+  const models = provider ? provider.models.filter(model => typeof model === 'string') : []
+  const validModelSelection = form.provider === ''
+    ? form.model === ''
+    : Boolean(provider && models.includes(form.model))
+  const validPageSizes = [form.default_page_size, form.max_page_size].every(value =>
+    value.trim() !== '' && Number.isInteger(Number(value)) && Number(value) > 0
+  ) && Number(form.default_page_size) <= Number(form.max_page_size)
+  const isDirty = JSON.stringify(form) !== JSON.stringify(savedForm)
+
+  const saveSettings = async () => {
+    if (!selectedRoute || !dataReady || formRoute !== selectedKey || !validModelSelection || !validPageSizes || !isDirty || saving) return
+    setSaving(true)
+    setFeedback(null)
+    const values = {
+      home_override: form.home_override,
+      default_page_size: Number(form.default_page_size),
+      max_page_size: Number(form.max_page_size),
+      compaction_routing: { provider: form.provider, model: form.model }
+    }
+    try {
+      await host.requestProfile(selectedRoute, 'plugins.manage', {
+        action: 'settings', key: 'magi', profile: selectedRoute.targetProfile, values
+      }, undefined, { spawnPriority: 'foreground' })
+      setSavedForm(form)
+      setFeedback({ kind: 'success', message: `Magi settings saved for ${selectedRoute.targetProfile}.` })
+      void profileData.refetch()
+    } catch (error) {
+      setFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const duplicateTargets = new Map()
+  for (const route of routes) duplicateTargets.set(route.targetProfile, (duplicateTargets.get(route.targetProfile) || 0) + 1)
+
+  return jsxs('div', {
+    className: 'flex h-full min-h-0 flex-col overflow-auto',
+    children: [
+      jsxs('header', {
+        className: 'shrink-0 border-b border-(--ui-stroke-secondary) px-4 py-3',
+        children: [
+          jsx('h1', { className: 'text-base font-semibold', children: 'Magi settings' }),
+          jsx('p', { className: 'mt-1 text-xs text-(--ui-text-tertiary)', children: 'Choose the Hermes profile to configure. Saving here does not switch your active profile.' })
+        ]
+      }),
+      jsxs('section', {
+        className: 'grid gap-3 p-4',
+        children: [
+          jsxs('label', {
+            className: 'grid max-w-xl gap-1 text-xs text-(--ui-text-tertiary)',
+            children: [
+              jsx('span', { children: 'Hermes profile' }),
+              jsx('select', {
+                'aria-label': 'Hermes profile',
+                className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)',
+                value: selectedKey,
+                disabled: profileRoutes.isLoading || saving || !routes.length,
+                onChange: event => { setSelectedRouteKey(event.target.value); setFeedback(null) },
+                children: routes.map(route => jsx('option', {
+                  value: profileRouteKey(route),
+                  children: duplicateTargets.get(route.targetProfile) > 1
+                    ? `${route.targetProfile} · ${route.mode} · ${route.connectionId}`
+                    : route.targetProfile
+                }, profileRouteKey(route)))
+              })
+            ]
+          }),
+          selectedRoute ? jsx('p', {
+            className: 'text-xs text-(--ui-text-secondary)',
+            children: `Configuring profile: ${selectedRoute.targetProfile}`
+          }) : null,
+          profileRoutes.isError ? jsx('p', { role: 'alert', className: 'text-sm text-(--ui-danger,#f87171)', children: 'Hermes profiles could not be loaded.' }) : null,
+          !selectedRoute && !profileRoutes.isLoading ? jsx('p', { role: 'status', className: 'text-sm text-(--ui-text-tertiary)', children: 'No Hermes profiles are available.' }) : null,
+          profileData.isError ? jsx('p', { role: 'alert', className: 'text-sm text-(--ui-danger,#f87171)', children: profileData.error?.message || 'Magi settings could not be loaded for this profile.' }) : null,
+          selectedRoute && dataReady && formRoute === selectedKey ? jsxs('div', {
+            className: 'grid max-w-2xl gap-4',
+            children: [
+              jsx('label', {
+                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
+                children: [
+                  jsx('span', { children: 'Hermes home override' }),
+                  jsx('input', {
+                    'aria-label': 'Hermes home override', type: 'text', value: form.home_override,
+                    disabled: saving, onChange: event => setForm(previous => ({ ...previous, home_override: event.target.value })),
+                    className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)'
+                  })
+                ]
+              }),
+              jsx('label', {
+                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
+                children: [
+                  jsx('span', { children: 'Default page size' }),
+                  jsx('input', {
+                    'aria-label': 'Default page size', type: 'number', step: 1, value: form.default_page_size,
+                    disabled: saving, onChange: event => setForm(previous => ({ ...previous, default_page_size: event.target.value })),
+                    className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)'
+                  })
+                ]
+              }),
+              jsx('label', {
+                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
+                children: [
+                  jsx('span', { children: 'Maximum page size' }),
+                  jsx('input', {
+                    'aria-label': 'Maximum page size', type: 'number', step: 1, value: form.max_page_size,
+                    disabled: saving, onChange: event => setForm(previous => ({ ...previous, max_page_size: event.target.value })),
+                    className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)'
+                  })
+                ]
+              }),
+              jsx('label', {
+                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
+                children: [
+                  jsx('span', { children: 'AI provider' }),
+                  jsx('select', {
+                    'aria-label': 'AI provider', value: form.provider,
+                    disabled: !dataReady || profileData.isFetching || saving,
+                    onChange: event => {
+                      const next = event.target.value
+                      const firstModel = providers.find(item => item.slug === next)?.models?.find(model => typeof model === 'string') || ''
+                      setForm(previous => ({ ...previous, provider: next, model: next ? firstModel : '' }))
+                    },
+                    className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)',
+                    children: [
+                      jsx('option', { value: '', children: 'Hermes default' }, 'default'),
+                      ...providers.map(item => jsx('option', { value: item.slug, children: item.name || item.slug }, item.slug))
+                    ]
+                  })
+                ]
+              }),
+              jsx('label', {
+                className: 'grid gap-1 text-xs text-(--ui-text-tertiary)',
+                children: [
+                  jsx('span', { children: 'AI model' }),
+                  jsx('select', {
+                    'aria-label': 'AI model', value: form.model,
+                    disabled: !dataReady || profileData.isFetching || saving || !provider || !models.length,
+                    onChange: event => setForm(previous => ({ ...previous, model: event.target.value })),
+                    className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1.5 text-(--ui-text-primary)',
+                    children: models.map(model => jsx('option', { value: model, children: model }, model))
+                  })
+                ]
+              }),
+              jsx(ActionButton, {
+                disabled: saving || profileData.isFetching || !dataReady || !isDirty || !validPageSizes || !validModelSelection,
+                onClick: saveSettings,
+                children: saving ? 'Saving…' : 'Save AI settings'
+              }),
+              jsx('p', {
+                className: 'text-xs text-(--ui-text-quaternary)',
+                children: profileData.isError ? 'Could not load this profile’s provider list.' : 'Provider and model choices come only from the selected profile. Overrides require Hermes consent.'
+              })
+            ]
+          }) : null,
+          feedback ? jsx('p', { role: feedback.kind === 'error' ? 'alert' : 'status', className: feedback.kind === 'error' ? 'text-sm text-(--ui-danger,#f87171)' : 'text-sm text-(--ui-text-secondary)', children: feedback.message }) : null
+        ]
+      })
+    ]
+  })
+}
+
 function MagiPage(props) {
   const [mode, setMode] = useState('pending')
   const [decisionReport, setDecisionReport] = useState(null)
@@ -2681,8 +2823,6 @@ function MagiPage(props) {
               })
             : mode === 'stored' ? jsx(StoredMemoryPage, {
                 loadStoredMemory: props.loadStoredMemory,
-                loadLlmOptions: props.loadLlmOptions,
-                saveLlmSettings: props.saveLlmSettings,
                 saveStoredMemory: props.saveStoredMemory,
                 addStoredMemory: props.addStoredMemory,
                 deleteStoredMemory: props.deleteStoredMemory,
@@ -2709,11 +2849,6 @@ export default {
     const loadRecords = () => ctx.rest('/records')
     const loadDetail = id => ctx.rest(`/records/${encodeURIComponent(id)}`)
     const loadStoredMemory = () => ctx.rest('/memory')
-    const loadLlmOptions = () => ctx.rest('/llm/options')
-    const saveLlmSettings = (provider, model) => ctx.rest('/llm/settings', {
-      method: 'PUT',
-      body: { provider, model }
-    })
     const loadHistory = filters => {
       const query = new URLSearchParams()
       if (filters.operation) query.set('operation', filters.operation)
@@ -2786,6 +2921,13 @@ export default {
       return parsed
     }
 
+    ctx.registerSettingsPage?.({
+      id: 'settings',
+      title: 'Magi',
+      icon: 'wand',
+      render: () => jsx(MagiSettingsPage, {})
+    })
+
     ctx.registerMany([
       {
         id: 'page',
@@ -2796,8 +2938,6 @@ export default {
             loadRecords,
             loadDetail,
             loadStoredMemory,
-            loadLlmOptions,
-            saveLlmSettings,
             loadHistory,
             clearHistory,
             saveStoredMemory,
