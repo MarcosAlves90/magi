@@ -333,7 +333,8 @@ def test_readme_version_and_three_accessible_local_screenshots():
         assert current_heading == "## 1.8.3 — 2026-10-30"
     else:
         date.fromisoformat(current_heading.rsplit(" — ", 1)[1])
-    assert "capabilities:\n  - llm.model_override" in manifest, "manifest must declare llm.model_override"
+    assert "- llm.model_override" in manifest, "manifest must declare llm.model_override"
+    assert "- llm.provider_override" in manifest, "manifest must declare llm.provider_override"
     assert package["version"] == current_version
     assert lock["version"] == current_version
     assert lock["packages"][""]["version"] == current_version
@@ -940,12 +941,14 @@ class FakeMemoryStore:
             self.user_entries = result[0]
         return {"success": True, "message": result[1]}
 
-    def apply_batch(self, target, operations):
-        self.batch_calls.append((target, operations))
+    def apply_batch(self, target, operations, *, expected_entries=None):
+        self.batch_calls.append((target, operations, expected_entries))
         if self.batch_result is not None:
             return self.batch_result
 
         def apply(entries, limit):
+            if expected_entries is not None and list(entries) != list(expected_entries):
+                return {"success": False, "error": "Stored memory changed since the reviewed snapshot."}
             working = list(entries)
             for operation in operations:
                 if operation["action"] == "remove":
@@ -1369,6 +1372,67 @@ def test_desktop_dashboard_uses_lightweight_reactive_ui_patterns():
     assert "lottie" not in source
 
 
+def test_backend_compaction_resolves_agent_bridge_without_global_alias(monkeypatch, tmp_path):
+    """Model the two real Hermes imports sharing one isolated plugin host."""
+    plugin_name = "hermes_plugins_magi_host_test"
+    bridge_path = (ROOT / "runtime_bridge.py").resolve()
+    for module_name, module in tuple(sys.modules.items()):
+        module_file = getattr(module, "__file__", None)
+        if module_name.endswith(".runtime_bridge") and isinstance(module_file, str) and Path(module_file).resolve() == bridge_path:
+            sys.modules.pop(module_name, None)
+    spec = importlib.util.spec_from_file_location(
+        plugin_name, ROOT / "__init__.py",
+        submodule_search_locations=[str(ROOT)],
+    )
+    plugin = importlib.util.module_from_spec(spec)
+    sys.modules[plugin_name] = plugin
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    callbacks = []
+    llm = FakeCompactionLlm(["first fact; second fact with detail"])
+
+    class HostContext:
+        def __init__(self):
+            self.llm = llm
+
+        def get_config(self, key, default=None):
+            return default
+
+        def register_command(self, *args, **kwargs):
+            pass
+
+        def register_cli_command(self, *args, **kwargs):
+            pass
+
+        def on_unload(self, callback):
+            callbacks.append(callback)
+
+    try:
+        spec.loader.exec_module(plugin)
+        monkeypatch.setattr(plugin, "resolve_hermes_home", lambda: profile)
+        plugin.register(HostContext())
+        assert "_magi_runtime_bridge" not in sys.modules
+        api = load_api()
+        monkeypatch.setattr(api, "resolve_hermes_home", lambda: profile)
+        assert api._plugin_llm()._ctx.llm is llm
+        monkeypatch.setattr(api, "_memory_store", lambda: FakeMemoryStore(memory=[
+            "The first durable fact is first fact with unnecessary explanatory wording.",
+            "The second durable fact is second fact with detail and repeated explanatory wording.",
+        ]))
+        monkeypatch.setattr(api, "_settings", lambda: {})
+        response = client_for(api).post("/memory/memory/compact/preview")
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        assert len(llm.calls) == 1
+        callbacks[0]()
+        with pytest.raises(RuntimeError, match="Agent context is unavailable"):
+            api._plugin_llm()
+    finally:
+        for name in list(sys.modules):
+            if name == plugin_name or name.startswith(plugin_name + "."):
+                sys.modules.pop(name, None)
+
+
 def test_backend_generates_compaction_preview_without_a_chat_session(monkeypatch):
     api = load_api()
     store = FakeMemoryStore(
@@ -1381,6 +1445,7 @@ def test_backend_generates_compaction_preview_without_a_chat_session(monkeypatch
     llm = FakeCompactionLlm(["first fact; second fact with detail"])
     monkeypatch.setattr(api, "_memory_store", lambda: store)
     monkeypatch.setattr(api, "_plugin_llm", lambda: llm, raising=False)
+    monkeypatch.setattr(api, "_llm_settings", lambda: {"provider": "", "model": ""})
 
     response = client_for(api).post("/memory/memory/compact/preview")
 
@@ -1413,14 +1478,145 @@ def test_backend_compaction_preview_uses_configured_model(monkeypatch):
     llm = FakeCompactionLlm(["first fact; second fact with detail"])
     monkeypatch.setattr(api, "_memory_store", lambda: store)
     monkeypatch.setattr(api, "_plugin_llm", lambda: llm, raising=False)
-    monkeypatch.setattr(api, "_settings", lambda: {"compaction_model": "provider/compact-model"})
+    monkeypatch.setattr(api, "_llm_settings", lambda: {
+        "provider": "openai", "model": "provider/compact-model",
+    })
 
     response = client_for(api).post("/memory/memory/compact/preview")
 
     assert response.status_code == 200
     assert response.json()["success"] is True
+    assert llm.calls[0]["provider"] == "openai"
     assert llm.calls[0]["model"] == "provider/compact-model"
+
+
+def test_llm_options_returns_profile_provider_and_model_choices(monkeypatch):
+    api = load_api()
+    monkeypatch.setattr(api, "_llm_settings", lambda: {
+        "provider": "openai", "model": "gpt-4.1-mini",
+    })
+    monkeypatch.setattr(api, "_available_llm_options", lambda: [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini", "gpt-4.1"]
+    }])
+
+    response = client_for(api).get("/llm/options")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "providers": [{
+            "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini", "gpt-4.1"]
+        }],
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+    }
+
+
+def test_cleared_llm_routing_ignores_legacy_overrides(monkeypatch):
+    api = load_api()
+    monkeypatch.setattr(api, "_settings", lambda: {
+        "compaction_routing": {"provider": "", "model": ""},
+        "compaction_provider": "openai",
+        "compaction_model": "gpt-4.1-mini",
+    })
+
+    assert api._llm_settings() == {"provider": "", "model": ""}
+
+
+def test_llm_options_discloses_legacy_model_only_override_and_can_clear_it(monkeypatch):
+    api = load_api()
+    settings = []
+    monkeypatch.setattr(api, "_settings", lambda: {"compaction_model": "old-custom-model"})
+    monkeypatch.setattr(api, "_available_llm_options", lambda: [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini"]
+    }])
+    monkeypatch.setattr(api, "_plugin_context", lambda: SimpleNamespace(
+        set_config=lambda key, value: settings.append((key, value))
+    ))
+    client = client_for(api)
+
+    options = client.get("/llm/options")
+    cleared = client.put("/llm/settings", json={"provider": "", "model": ""})
+
+    assert options.status_code == 200
+    assert options.json()["legacy_override"] == {"provider": "", "model": "old-custom-model"}
+    assert options.json()["provider"] == options.json()["model"] == ""
+    assert cleared.status_code == 200
+    assert settings == [("compaction_routing", {"provider": "", "model": ""})]
+
+
+def test_compaction_preview_uses_defaults_if_saved_choice_disappears(monkeypatch):
+    api = load_api()
+    store = FakeMemoryStore(memory=[
+        "The first durable fact is first fact with unnecessary explanatory wording.",
+        "The second durable fact is second fact with detail and repeated explanatory wording.",
+    ])
+    llm = FakeCompactionLlm(["first fact; second fact with detail"])
+    monkeypatch.setattr(api, "_memory_store", lambda: store)
+    monkeypatch.setattr(api, "_plugin_llm", lambda: llm, raising=False)
+    monkeypatch.setattr(api, "_settings", lambda: {
+        "compaction_routing": {"provider": "removed", "model": "old-model"},
+    })
+    monkeypatch.setattr(api, "_available_llm_options", lambda: [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini"]
+    }])
+
+    response = client_for(api).post("/memory/memory/compact/preview")
+
+    assert response.status_code == 200
     assert "provider" not in llm.calls[0]
+    assert "model" not in llm.calls[0]
+
+
+def test_available_llm_options_maps_hermes_picker_catalog(monkeypatch):
+    from types import ModuleType
+
+    api = load_api()
+    inventory = ModuleType("hermes_cli.inventory")
+    setattr(inventory, "load_picker_context", lambda: "active-profile")
+    captured = {}
+
+    def build_models_payload(context, **kwargs):
+        captured["context"] = context
+        captured["kwargs"] = kwargs
+        return {"providers": [
+            {"slug": "openai", "name": "OpenAI", "models": ["gpt-4.1-mini", 7]},
+            {"slug": "empty", "name": "Empty", "models": []},
+            {"name": "Malformed", "models": ["ignored"]},
+        ]}
+
+    setattr(inventory, "build_models_payload", build_models_payload)
+    package = ModuleType("hermes_cli")
+    package.__path__ = []
+    monkeypatch.setitem(sys.modules, "hermes_cli", package)
+    monkeypatch.setitem(sys.modules, "hermes_cli.inventory", inventory)
+
+    assert api._available_llm_options() == [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini"]
+    }]
+    assert captured["context"] == "active-profile"
+    assert captured["kwargs"]["explicit_only"] is True
+    assert captured["kwargs"]["probe_custom_providers"] is False
+
+
+def test_llm_settings_save_only_accepts_active_profile_choices(monkeypatch):
+    api = load_api()
+    settings = []
+    monkeypatch.setattr(api, "_available_llm_options", lambda: [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini"]
+    }])
+    monkeypatch.setattr(api, "_plugin_context", lambda: SimpleNamespace(
+        set_config=lambda key, value: settings.append((key, value))
+    ))
+    client = client_for(api)
+
+    invalid = client.put("/llm/settings", json={"provider": "unknown", "model": "manual"})
+    valid = client.put("/llm/settings", json={"provider": "openai", "model": "gpt-4.1-mini"})
+
+    assert invalid.status_code == 400
+    assert valid.status_code == 200
+    assert settings == [
+        ("compaction_routing", {"provider": "openai", "model": "gpt-4.1-mini"}),
+    ]
 
 
 def test_backend_applies_compaction_as_one_stale_safe_batch(monkeypatch):
@@ -1436,8 +1632,9 @@ def test_backend_applies_compaction_as_one_stale_safe_batch(monkeypatch):
 
     assert response.status_code == 200
     assert len(store.batch_calls) == 1
-    target, operations = store.batch_calls[0]
+    target, operations, expected_entries = store.batch_calls[0]
     assert target == "memory"
+    assert expected_entries is None
     assert operations == [
         {"action": "remove", "old_text": "first fact", "matched_entry": "first fact"},
         {"action": "remove", "old_text": "second fact", "matched_entry": "second fact"},
@@ -1648,10 +1845,10 @@ disk.load_from_disk()
 assert disk.memory_entries == ["fact"]
 assert "_mutate" not in vars(store)
 '''
-    env = {**os.environ, "HERMES_HOME": str(tmp_path),
+    env = {**os.environ, "HERMES_HOME": str(tmp_path), "HERMES_DISABLE_LAZY_INSTALLS": "1",
            "HERMES_NATIVE_ROOT": str(hermes_root), "MAGI_REPO_ROOT": str(ROOT)}
     result = subprocess.run(
-        ["uv", "run", "--with", "fastapi>=0.115,<1", "--with", "httpx>=0.27,<1", "python", "-c", code],
+        ["uv", "run", "--with", "fastapi>=0.115,<1", "--with", "httpx>=0.27,<1", "--with", "ruamel.yaml", "python", "-c", code],
         cwd=ROOT, env=env, capture_output=True, text=True, timeout=45, check=False,
     )
     assert result.returncode == 0, result.stderr
@@ -1681,3 +1878,22 @@ def test_backend_returns_not_found_for_unknown_record(monkeypatch, tmp_path):
     response = client_for(api).get("/records/missing")
     assert response.status_code == 404
     assert response.json()["detail"] == "No pending memory write with id/prefix 'missing'."
+
+
+def test_llm_settings_route_uses_profile_ipc_when_context_is_not_loaded(monkeypatch):
+    api = load_api()
+    settings = []
+    monkeypatch.setattr(api, "_available_llm_options", lambda: [{
+        "id": "openai", "label": "OpenAI", "models": ["gpt-4.1-mini"]
+    }])
+    monkeypatch.setattr(api, "_plugin_context", lambda: None, raising=False)
+    monkeypatch.setattr(api, "_plugin_llm", lambda: SimpleNamespace(
+        set_compaction_routing=lambda provider, model: settings.append((provider, model))
+    ))
+
+    response = client_for(api).put(
+        "/llm/settings", json={"provider": "openai", "model": "gpt-4.1-mini"}
+    )
+
+    assert response.status_code == 200
+    assert settings == [("openai", "gpt-4.1-mini")]

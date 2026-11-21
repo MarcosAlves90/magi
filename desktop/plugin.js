@@ -1247,7 +1247,6 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
     queryFn: loadStoredMemory,
     refetchInterval: 5_000
   })
-
   const targetData = stored.data?.targets?.[target] || { count: 0, entries: [] }
   const entries = targetData.entries || []
   const query = search.trim().toLocaleLowerCase()
@@ -1644,6 +1643,7 @@ function StoredMemoryPage({ loadStoredMemory, saveStoredMemory, addStoredMemory,
       if (reviewRequestId.current === id) setReviewingPreservation(false)
     }
   }
+
 
   if (stored.isError) {
     return jsxs('div', {

@@ -9,18 +9,21 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 REFS = {
     "minimum-0.21.5": ("v2026.9.24", "f97608f178d1ffeca59860195ab7da295f7c8e5f"),
-    "ci-pinned": ("pinned-2026-10-08", "517b5e10febd619ce30bb22580e29b160266eb43"),
+    "ci-pinned": ("pr-157035", "478e0557ec0068c2c8130acc204c02acf789e8bf"),
     "stable-0.22.5": ("v0.22.5", "bf0203a794a07aac3ff764972ab9087baa4e4f4e"),
 }
 
 
-def test_hermes_matrix_has_exact_isolated_release_refs():
+def test_hermes_matrix_has_exact_isolated_hermes_refs():
     yaml = WORKFLOW.read_text()
     assert "matrix:" in yaml and "include:" in yaml
     assert "fail-fast: false" in yaml
     assert "continue-on-error: ${{ matrix.informational }}" in yaml
     assert "${{ matrix.hermes_sha }}" in yaml
     assert "${{ matrix.hermes_version }}" in yaml
+    assert "remote add origin https://github.com/NousResearch/hermes-agent.git" in yaml
+    assert 'hermes_dir="$RUNNER_TEMP/hermes-agent"' in yaml
+    assert "if: matrix.label == 'ci-pinned'" in yaml
     for label, (version, sha) in REFS.items():
         assert f"label: {label}" in yaml
         assert f"hermes_version: {version}" in yaml

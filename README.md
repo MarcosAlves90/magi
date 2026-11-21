@@ -30,7 +30,9 @@ Magi brings pending memory proposals and Hermes' durable `MEMORY.md` / `USER.md`
 
 ![Magi human-reviewed memory workflow](docs/magi-memory-workflow.png)
 
-Pending decisions and memory edits use Hermes' native safeguards. AI actions send selected memory through the model/provider configured in Hermes; they do not write automatically.
+Pending decisions and memory edits use Hermes' native safeguards. AI compaction uses the profile's Hermes defaults unless a provider and model are configured in **Settings → Plugins → Magi**; it never writes automatically.
+
+The native settings page selects the profile independently of the active chat. Set **AI model routing** to a JSON object such as `{"provider":"openai","model":"example-model"}`, replacing both values with a provider and model available in that profile. Use `{"provider":"","model":""}` for Hermes defaults, including when clearing a legacy override. Incomplete or unavailable selections fall back to those defaults. The form does not currently offer dynamic provider/model lists ([Hermes issue](https://github.com/NousResearch/hermes-agent/issues/123204)). Magi cannot set reasoning effort independently: Hermes and the provider determine the effective setting ([Hermes issue](https://github.com/NousResearch/hermes-agent/issues/158448)).
 
 ## Get started
 
@@ -58,6 +60,6 @@ In Hermes Desktop, enable both **Agent** for your active profile and **Desktop M
 
 - **You decide:** pending-write approvals, edits, imports, and AI compaction apply only after an explicit action.
 - **Hermes persists:** Magi uses Hermes' native memory APIs; it does not edit the stores directly.
-- **Local by design:** Magi makes no direct third-party network calls, launches no shell commands, and collects no telemetry. AI features use Hermes' configured provider.
+- **Local by design:** Magi makes no direct third-party network calls, launches no shell commands, and collects no telemetry. AI features use Hermes' configured provider/model or the profile-scoped compaction override; Hermes retains credentials and enforces consent.
 
 See [Security & privacy](docs/security-and-privacy.md) for the data flow, model-consent requirements, and important concurrency and recovery limits.

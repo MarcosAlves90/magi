@@ -1,19 +1,20 @@
 # Hermes compatibility checks for Magi 1.8.4
 
 The GitHub Actions matrix tests three **immutable Hermes commits** in separate
-jobs. The minimum and existing pinned revision are required; the latest stable
-release is initially informational (`continue-on-error`) so an upstream release
-cannot silently change the previously reproducible admission gate. Every job
-installs the exact Hermes revision, checks `git rev-parse HEAD`, and runs the
-same Magi verification, Desktop interaction harness, and public memory API
-probe. No Hermes source is edited.
+jobs. The minimum and latest stable releases validate compatibility; the
+required `ci-pinned` job uses an immutable head of Hermes PR #157035 for its
+pending conditional-memory API. Only that feature lane runs the upstream
+conditional-batch tests; the release pins predate the API. Every job installs
+the exact Hermes revision, checks `git rev-parse HEAD`, and runs the same Magi
+verification, Desktop interaction harness, and public memory API probe. No
+Hermes source is edited.
 
-## Selected versions and local evidence (2026-10-23)
+## Selected versions and local evidence
 
-| CI job | Hermes identity | Commit SHA | Python | Local install / native API probe |
+| CI job | Hermes identity | Commit SHA | Python | Local verification |
 | --- | --- | --- | --- | --- |
 | `minimum-0.21.5` (required) | Release `v0.21.5`, Git tag **`v2026.9.24`** | `f97608f178d1ffeca59860195ab7da295f7c8e5f` | 3.13 | `uv sync --frozen --no-dev` PASS; `memory` and `user` add / pinned `apply_batch` / disk reload PASS |
-| `ci-pinned` (required) | Prior pinned commit, 2026-10-08 | `517b5e10febd619ce30bb22580e29b160266eb43` | 3.14 | `uv sync --frozen --no-dev` PASS; both targets' native API probe PASS |
+| `ci-pinned` (required) | Hermes PR #157035 conditional-memory feature head | `478e0557ec0068c2c8130acc204c02acf789e8bf` | 3.14 | `uv sync --frozen --no-dev` PASS; 2 `conditional_batch` tests PASS locally (2026-11-20) |
 | `stable-0.22.5` (informational) | Published GitHub release `v0.22.5` (2026-10-23T05:28:45Z) | `bf0203a794a07aac3ff764972ab9087baa4e4f4e` | 3.14 | `uv sync --frozen --no-dev` PASS; both targets' native API probe PASS |
 
 The original `v0.21.5` spelling is the Python package release number; GitHub
@@ -34,8 +35,9 @@ and the native Hermes compatibility probe passed. The assertion was corrected
 to await the asynchronously selected editor draft. POLIS validation for the
 revised MAGI-014 contract then passed both enabled gates in isolated worktrees.
 Because DOM tests mock Hermes entirely, the original failure was not evidence
-of an upstream API incompatibility. The matrix's GitHub Actions results remain
-unknown until the workflow actually runs.
+of an upstream API incompatibility. At the time of the 2026-10-23 local
+review, GitHub Actions results had not yet been observed; see the PR checks for
+current remote evidence.
 
 ## Operations checked
 

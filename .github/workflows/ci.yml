@@ -26,8 +26,8 @@ jobs:
             python_version: '3.13'
             informational: false
           - label: ci-pinned
-            hermes_version: pinned-2026-10-08
-            hermes_sha: 517b5e10febd619ce30bb22580e29b160266eb43
+            hermes_version: pr-157035
+            hermes_sha: 478e0557ec0068c2c8130acc204c02acf789e8bf
             python_version: '3.14'
             informational: false
           # Latest published stable GitHub release selected on 2026-10-23.
@@ -87,6 +87,14 @@ jobs:
 
       - name: Check native Hermes memory APIs
         run: python ci/hermes-compatibility.py
+
+      # Run upstream conditional-batch tests only with the feature pin.
+      - name: Verify conditional memory batches in Hermes
+        if: matrix.label == 'ci-pinned'
+        run: |
+          hermes_dir="$RUNNER_TEMP/hermes-agent"
+          uv run --project "$hermes_dir" --frozen --with 'pytest>=8,<10' \
+            python -m pytest -q "$hermes_dir/tests/tools/test_memory_tool.py" -k conditional_batch
 
       - name: Verify Magi
         run: ./verify.sh

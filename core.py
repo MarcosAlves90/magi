@@ -10,6 +10,44 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
+def available_llm_options() -> List[Dict[str, Any]]:
+    """Return the active profile's configured provider/model choices."""
+    from hermes_cli.inventory import build_models_payload, load_picker_context
+
+    payload = build_models_payload(
+        load_picker_context(), explicit_only=True, for_picker=True,
+        non_blocking_catalogs=True, probe_custom_providers=False,
+        probe_current_custom_provider=False,
+    )
+    rows = payload.get("providers", []) if isinstance(payload, dict) else []
+    return [
+        {
+            "id": row["slug"],
+            "label": row.get("name") or row["slug"],
+            "models": [model for model in row["models"] if isinstance(model, str)],
+        }
+        for row in rows
+        if isinstance(row, dict)
+        and isinstance(row.get("slug"), str) and row["slug"]
+        and isinstance(row.get("models"), list) and row["models"]
+    ]
+
+
+def resolve_compaction_routing(routing: Any, providers: Sequence[Dict[str, Any]]) -> Tuple[str, str]:
+    """Resolve a saved routing only when both values remain in the profile catalog."""
+    if not isinstance(routing, dict):
+        return "", ""
+    provider = str(routing.get("provider") or "").strip()
+    model = str(routing.get("model") or "").strip()
+    if not provider and not model:
+        return "", ""
+    if provider and model and any(
+        row.get("id") == provider and model in row.get("models", []) for row in providers
+    ):
+        return provider, model
+    return "", ""
+
+
 MEMORY_CHARS_PER_TOKEN = 2.75
 TOKEN_ESTIMATE_METHOD = "hermes_memory_budget_2.75_chars_per_token"
 MEMORY_COMPACTION_MAX_ATTEMPTS = 3
@@ -238,6 +276,7 @@ def build_memory_compaction_preview(
     entries: Sequence[str],
     delimiter: str,
     model: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> Dict[str, Any]:
     if target not in {"memory", "user"}:
         return {"success": False, "error": "target must be 'memory' or 'user'."}
@@ -292,6 +331,8 @@ def build_memory_compaction_preview(
             }
             if model:
                 completion_kwargs["model"] = model
+            if provider:
+                completion_kwargs["provider"] = provider
             result = llm.complete_structured(
                 **completion_kwargs,
             )

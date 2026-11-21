@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, StrictBool, StrictInt
+from pydantic import BaseModel, StrictBool, StrictInt, StrictStr
 
 
 _PLUGIN_ID = "magi"
@@ -39,6 +39,8 @@ memory_source_fingerprint = _core["memory_source_fingerprint"]
 has_embedded_entry_delimiter = _core["has_embedded_entry_delimiter"]
 _memory_compaction_budgets = _core["_memory_compaction_budgets"]
 _memory_compaction_max_entries = _core["_memory_compaction_max_entries"]
+available_llm_options = _core["available_llm_options"]
+resolve_compaction_routing = _core["resolve_compaction_routing"]
 
 router = APIRouter()
 
@@ -70,6 +72,11 @@ class MemoryDeleteRequest(BaseModel):
 class MemoryCompactionApplyRequest(BaseModel):
     source_fingerprint: str
     entries: List[str]
+
+
+class LlmSettingsRequest(BaseModel):
+    provider: StrictStr = ""
+    model: StrictStr = ""
 
 
 class MemoryCompactionReviewRequest(BaseModel):
@@ -115,6 +122,27 @@ def _settings() -> Dict[str, Any]:
     legacy = entry.get("config") if isinstance(entry.get("config"), dict) else {}
     settings = entry.get("settings") if isinstance(entry.get("settings"), dict) else {}
     return {**legacy, **settings}
+
+
+def _available_llm_options() -> List[Dict[str, Any]]:
+    """Return the active profile's configured choices without probing custom providers."""
+    return available_llm_options()
+
+
+def _llm_settings() -> Dict[str, str]:
+    settings = _settings()
+    routing = settings.get("compaction_routing")
+    if isinstance(routing, dict) and any(key in routing for key in ("provider", "model")):
+        provider = str(routing.get("provider") or "").strip()
+        model = str(routing.get("model") or "").strip()
+        if provider or model:
+            provider, model = resolve_compaction_routing(routing, _available_llm_options())
+        else:
+            provider, model = "", ""
+    else:
+        provider = str(settings.get("compaction_provider") or "").strip()
+        model = str(settings.get("compaction_model") or "").strip()
+    return {"provider": provider, "model": model}
 
 
 def _review() -> Any:
@@ -365,6 +393,23 @@ def _audit_result(result: Dict[str, Any], operation: str, target: str) -> Dict[s
     if not recorded:
         result["audit_warning"] = "The operation completed, but its local audit record could not be saved."
     return result
+
+
+def _plugin_context() -> Any | None:
+    active = []
+    for module in tuple(sys.modules.values()):
+        if not getattr(module, "__name__", "").endswith(".runtime_bridge"):
+            continue
+        filename = getattr(module, "__file__", None)
+        if not filename or Path(filename).resolve() != _RUNTIME_BRIDGE_PATH:
+            continue
+        try:
+            active.append(module.get_plugin_context())
+        except RuntimeError:
+            continue
+    if len(active) > 1:
+        raise RuntimeError("Multiple Magi Agent contexts are loaded in this plugin host.")
+    return active[0] if active else None
 
 
 def _plugin_llm() -> Any:
@@ -951,8 +996,52 @@ def preview_memory_compaction(target: str) -> Dict[str, Any]:
         llm = _plugin_llm()
     except Exception as exc:
         return {"success": False, "error": f"AI compaction unavailable: {exc}"}
-    model = str(_settings().get("compaction_model") or "").strip() or None
-    return build_memory_compaction_preview(llm, target, entries, _entry_delimiter(), model=model)
+    settings = _llm_settings()
+    model = settings["model"] or None
+    provider = settings["provider"] or None
+    return build_memory_compaction_preview(
+        llm, target, entries, _entry_delimiter(), model=model, provider=provider,
+    )
+
+
+@router.get("/llm/options")
+def llm_options() -> Dict[str, Any]:
+    providers = _available_llm_options()
+    settings = _llm_settings()
+    provider = settings["provider"]
+    selected = next((row for row in providers if row["id"] == provider), None)
+    model = settings["model"]
+    if not selected or model not in selected["models"]:
+        provider, model = "", ""
+    result = {"providers": providers, "provider": provider, "model": model}
+    raw_settings = _settings()
+    routing = raw_settings.get("compaction_routing")
+    has_saved_routing = isinstance(routing, dict) and any(key in routing for key in ("provider", "model"))
+    legacy_provider = str(raw_settings.get("compaction_provider") or "").strip()
+    legacy_model = str(raw_settings.get("compaction_model") or "").strip()
+    if not has_saved_routing and (legacy_provider or legacy_model):
+        result["legacy_override"] = {"provider": legacy_provider, "model": legacy_model}
+    return result
+
+
+@router.put("/llm/settings")
+def save_llm_settings(body: LlmSettingsRequest) -> Dict[str, Any]:
+    provider, model = body.provider.strip(), body.model.strip()
+    if bool(provider) != bool(model):
+        raise HTTPException(status_code=400, detail="Select both a provider and model, or clear both to use Hermes defaults.")
+    if provider and not any(
+        row["id"] == provider and model in row["models"] for row in _available_llm_options()
+    ):
+        raise HTTPException(status_code=400, detail="Choose a provider and model from the active profile's available list.")
+    try:
+        ctx = _plugin_context()
+        if ctx is None:
+            _plugin_llm().set_compaction_routing(provider, model)
+        else:
+            ctx.set_config("compaction_routing", {"provider": provider, "model": model})
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not save Magi LLM settings.") from None
+    return {"success": True, "provider": provider, "model": model}
 
 
 @router.post("/memory/{target}/compact/review")

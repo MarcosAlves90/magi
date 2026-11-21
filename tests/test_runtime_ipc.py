@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import threading
+from contextvars import ContextVar
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -87,6 +88,7 @@ def test_dashboard_llm_uses_profile_socket_across_processes_and_unload_removes_i
     unload_callbacks = []
     ctx = SimpleNamespace(
         llm=llm,
+        has_capability=lambda _: True,
         on_unload=unload_callbacks.append,
         register_command=lambda *args, **kwargs: None,
         register_cli_command=lambda *args, **kwargs: None,
@@ -106,6 +108,8 @@ result = api._plugin_llm().complete_structured(
     input=[{"type": "text", "text": "synthetic test entry"}],
     json_schema={"type": "object"},
     purpose="memory organization analysis",
+    provider="openai",
+    model="gpt-4.1-mini",
 )
 assert result.parsed == {"suggestions": []}
 assert result.text == '{"suggestions": []}'
@@ -128,6 +132,8 @@ print("IPC_RESULT_OK")
         assert "IPC_RESULT_OK" in result.stdout
         assert len(llm.calls) == 1
         assert "synthetic test entry" in str(llm.calls[0]["input"])
+        assert llm.calls[0]["provider"] == "openai"
+        assert llm.calls[0]["model"] == "gpt-4.1-mini"
         socket_path = profile / "plugin-data" / "magi" / "llm.sock"
         assert socket_path.is_socket()
         assert stat.S_IMODE(socket_path.stat().st_mode) == 0o600
@@ -159,6 +165,13 @@ def test_duplicate_server_stop_preserves_live_owner(tmp_path):
         )
         assert result.parsed == {"suggestions": []}
         assert len(llm.calls) == 1
+        client.complete_structured(
+            instructions="test", input=[{"type": "text", "text": "synthetic"}],
+            json_schema={"type": "object"}, purpose="test",
+            provider="openai", model="gpt-4.1-mini",
+        )
+        assert llm.calls[1]["provider"] == "openai"
+        assert llm.calls[1]["model"] == "gpt-4.1-mini"
     finally:
         duplicate.stop()
         owner.stop()
@@ -572,8 +585,8 @@ def test_failed_start_cleanup_drains_inflight_provider_call(tmp_path, monkeypatc
     original_server = module._ThreadedUnixServer
 
     class ControlledReadinessServer(original_server):
-        def __init__(self, path, llm):
-            super().__init__(path, llm)
+        def __init__(self, path, llm, plugin_context=None, available_llm_options=None):
+            super().__init__(path, llm, plugin_context, available_llm_options)
 
             def wait_for_failure(timeout=None):
                 wait_entered.set()
@@ -654,3 +667,60 @@ def test_profile_lock_file_open_is_nonblocking(tmp_path, monkeypatch):
         if started:
             server.stop()
     assert observed_flags
+
+
+def test_profile_client_saves_only_compaction_routing_through_agent_context(tmp_path):
+    module = _load_runtime_ipc()
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    settings = []
+    catalog_contexts = []
+    active_profile = ContextVar("magi_active_profile", default="unset")
+    token = active_profile.set("profile-context")
+
+    class PluginContext:
+        def set_config(self, key, value):
+            settings.append((key, value, active_profile.get()))
+
+    def available_options():
+        catalog_contexts.append(active_profile.get())
+        return [{"id": "openai", "models": ["gpt-4.1-mini"]}]
+
+    server = module.ProfileLlmServer(
+        profile, FakeLlm(), PluginContext(), available_options,
+    ).start()
+    client = module.ProfileLlmClient(profile)
+    try:
+        client.set_compaction_routing("openai", "gpt-4.1-mini")
+        client.set_compaction_routing("", "")
+        with pytest.raises(RuntimeError):
+            client.set_compaction_routing("openai", "not-in-catalog")
+    finally:
+        server.stop()
+        active_profile.reset(token)
+    assert settings == [
+        ("compaction_routing", {"provider": "openai", "model": "gpt-4.1-mini"}, "profile-context"),
+        ("compaction_routing", {"provider": "", "model": ""}, "profile-context"),
+    ]
+    assert catalog_contexts == ["profile-context", "profile-context"]
+
+
+def test_profile_server_rejects_unvalidated_provider_model_override(tmp_path):
+    module = _load_runtime_ipc()
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    settings = []
+
+    class PluginContext:
+        def set_config(self, key, value):
+            settings.append((key, value))
+
+    server = module.ProfileLlmServer(profile, FakeLlm(), PluginContext()).start()
+    client = module.ProfileLlmClient(profile)
+    try:
+        with pytest.raises(RuntimeError):
+            client.set_compaction_routing("openai", "not-in-catalog")
+    finally:
+        server.stop()
+
+    assert settings == []

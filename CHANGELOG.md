@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added profile-scoped provider/model selectors for AI compaction in Stored memory. Choices come from the active Hermes profile; the default option clears overrides, and Hermes retains capability consent and provider credentials.
 - Reorganized export/import controls into a compact Transfer dropdown (`aria-expanded`/`aria-controls`/`role="menu"`) in Stored memory, freeing toolbar space; Export memory, Export both stores, and Import JSON now live inside one accessible menu. Existing import/export behavior and per-store fingerprint preconditions are unchanged.
 - Added an explicit **Dismiss** button to the organization analysis panel (Review memory with AI), letting users close the panel without taking any decision; bounded-request, no-apply behavior preserved.
 

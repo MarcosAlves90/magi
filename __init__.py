@@ -14,13 +14,17 @@ from .core import (
     MEMORY_CHARS_PER_TOKEN,
     TOKEN_ESTIMATE_METHOD,
     MagiReview,
+    available_llm_options,
     build_memory_compaction_preview,
     estimate_memory_tokens,
     memory_source_fingerprint,
+    resolve_compaction_routing,
     resolve_hermes_home,
     tokenize,
 )
-from .runtime_bridge import bind_plugin_context, clear_plugin_context, get_plugin_llm
+from .runtime_bridge import (
+    bind_plugin_context, clear_plugin_context, get_plugin_context, get_plugin_llm,
+)
 from .runtime_ipc import ProfileLlmServer
 
 
@@ -105,10 +109,24 @@ def _compact_preview(ctx, raw_args: str) -> str:
     store = _memory_store()
     entries = list(store.memory_entries if target == "memory" else store.user_entries)
     try:
-        model = str(ctx.get_config("compaction_model", default="") or "").strip() or None
+        routing = ctx.get_config("compaction_routing", default={})
+        routing = routing if isinstance(routing, dict) else {}
+        has_saved_routing = any(key in routing for key in ("provider", "model"))
+        if has_saved_routing:
+            if routing.get("provider") or routing.get("model"):
+                provider_value, model_value = resolve_compaction_routing(routing, available_llm_options())
+            else:
+                provider_value = model_value = ""
+        else:
+            model_value = ctx.get_config("compaction_model", default="")
+            provider_value = ctx.get_config("compaction_provider", default="")
+        model = str(model_value or "").strip() or None
+        provider = str(provider_value or "").strip() or None
     except Exception:
-        model = None
-    result = build_memory_compaction_preview(get_plugin_llm(), target, entries, _entry_delimiter(), model=model)
+        model = provider = None
+    result = build_memory_compaction_preview(
+        get_plugin_llm(), target, entries, _entry_delimiter(), model=model, provider=provider,
+    )
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -125,7 +143,9 @@ def register(ctx) -> None:
     on_unload = getattr(ctx, "on_unload", None)
     if callable(on_unload):
         try:
-            ipc_server = ProfileLlmServer(resolve_hermes_home(), get_plugin_llm()).start()
+            ipc_server = ProfileLlmServer(
+                resolve_hermes_home(), get_plugin_llm(), get_plugin_context(), available_llm_options,
+            ).start()
         except Exception:
             ipc_server = None
 

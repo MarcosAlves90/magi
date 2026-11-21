@@ -84,7 +84,11 @@ function fixture() {
   }
   plugin.register(ctx)
   const route = ctx.registrations.find(item => item.area === 'routes' && item.data.path === '/magi')
-  return { state, ctx, mount: () => render(route.render()) }
+  return {
+    state,
+    ctx,
+    mount: () => render(route.render())
+  }
 }
 
 function btn(name) { return screen.getByRole('button', { name: name.includes(' ') ? new RegExp(name.replaceAll(' ', '\\s*')) : name, exact: true }) }
@@ -151,6 +155,17 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inspect diagnostics' }))
     expect(await screen.findByText(/Entry sizes \(characters\)/)).toBeTruthy()
   })
+
+  it('moves model controls out of the stored-memory workspace', async () => {
+    const { mount } = fixture()
+    mount()
+    fireEvent.click(btn('Stored memory Durable context'))
+    await screen.findByRole('heading', { name: 'Stored memory' })
+
+    expect(screen.queryByRole('combobox', { name: 'AI provider' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'AI model' })).toBeNull()
+  })
+
 
   it('keeps non-obvious memory actions described by accessible tooltips instead of a side notice', async () => {
     const { mount } = fixture()

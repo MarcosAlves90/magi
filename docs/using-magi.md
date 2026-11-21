@@ -92,11 +92,10 @@ Use the terminal for large records that may exceed chat message limits.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `compaction_model` | Empty | Optional model for compaction; empty uses Hermes' active/default model. |
 | `home_override` | Empty | Optional Hermes home directory; empty uses the active profile. |
 | `default_page_size` | `20` | Default pending-write page size. |
 | `max_page_size` | `100` | Maximum list/search page size. |
 
-An explicit `compaction_model` requires consent to the `llm.model_override` capability, Hermes' LLM override trust permission (`plugins.entries.magi.llm.allow_model_override` on builds using the legacy gate), and compliance with configured `allowed_models`. Hosts without capability probing deny explicit overrides; the default model remains available.
+In **Settings → Plugins → Magi**, select the target profile and enter an **AI model routing** JSON object with `provider` and `model` strings from that profile's configured catalog. The form does not offer dynamic provider/model lists. Use `{"provider":"","model":""}` to clear the override and use Hermes defaults, including when upgrading from a legacy override. Incomplete or unavailable pairs fall back to those defaults. Provider/model overrides require the corresponding Magi capabilities to be granted in Hermes, and Hermes enforces its configured model restrictions. Hosts without capability probing deny explicit overrides; the default model remains available. See [model routing](../README.md#how-it-works) for an example and the reasoning-effort limitation.
 
 After upgrading from an older Magi IPC server, restart the Agent plugin. Magi intentionally rejects stale protocol-v1 listeners that cannot enforce the consent gate.
