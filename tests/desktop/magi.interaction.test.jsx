@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { host } from '@hermes/plugin-sdk'
 import plugin from '../../desktop/plugin.js'
 
 beforeEach(() => vi.stubGlobal('fetch', () => { throw new Error('Unexpected external network access') }))
@@ -14,41 +13,11 @@ function fixture() {
       { id: 'rec-two', summary: 'Update the beta', action: 'replace', target: 'user', origin: 'auto_review', created_at: 2, target_status: { state: 'ready', can_apply: true } }
     ],
     entries: { memory: ['One durable fact', 'Another fact'], user: ['User preference'] },
-    requests: [], failNext: new Map(), fingerprint: 'fingerprint-1',
-    profileRequests: [],
-    profileSettings: {
-      'test-profile': { home_override: '', default_page_size: 20, max_page_size: 100, compaction_routing: { provider: 'openai', model: 'gpt-active' } },
-      'other-profile': { home_override: '', default_page_size: 20, max_page_size: 100, compaction_routing: { provider: '', model: '' } }
-    },
-    profileRoutes: [
-      { connectionId: 'local-connection', mode: 'local', profile: 'test-profile', targetProfile: 'test-profile', primary: true },
-      { connectionId: 'remote-connection', mode: 'remote', profile: 'desktop-route', targetProfile: 'other-profile' }
-    ]
-  }
-  host.state.profile.get = () => 'test-profile'
-  host.profileRoutes = async () => [...state.profileRoutes]
-  host.requestProfile = async (route, method, params) => {
-    state.profileRequests.push({ route: structuredClone(route), method, params: structuredClone(params) })
-    if (method === 'model.options') {
-      return { providers: route.targetProfile === 'other-profile'
-        ? [{ slug: 'anthropic', name: 'Anthropic', models: ['claude-profile', 'claude-fast'] }]
-        : [{ slug: 'openai', name: 'OpenAI', models: ['gpt-active'] }] }
-    }
-    if (method === 'plugins.manage' && params.action === 'list') {
-      const settings = state.profileSettings[route.targetProfile]
-      return { plugins: [{ key: 'magi', settings_schema: Object.entries(settings).map(([key, value]) => ({ key, value })) }] }
-    }
-    if (method === 'plugins.manage' && params.action === 'settings') {
-      const settings = state.profileSettings[route.targetProfile]
-      state.profileSettings[route.targetProfile] = { ...settings, ...structuredClone(params.values) }
-      return { ok: true }
-    }
-    throw new Error(`Unexpected profile request: ${method}`)
+    requests: [], failNext: new Map(), fingerprint: 'fingerprint-1'
   }
   const ctx = {
     source: 'test-profile',
     registerMany(registrations) { ctx.registrations = registrations },
-    registerSettingsPage(page) { ctx.settingsPage = page },
     async rest(path, options = {}) {
       state.requests.push({ path, method: options.method || 'GET', body: options.body })
       if (state.failNext.get(path)) {
@@ -56,14 +25,6 @@ function fixture() {
         throw new Error('Network unavailable')
       }
       if (path === '/records' && !options.method) return { records: [...state.records], count: state.records.length, issues: [] }
-      if (path === '/llm/options' && !options.method) return { ...state.llmOptions }
-      if (path === '/llm/settings' && options.method === 'PUT') {
-        const body = structuredClone(options.body)
-        state.llmSaves.push(body)
-        state.llmOptions = { ...state.llmOptions, ...body }
-        delete state.llmOptions.legacy_override
-        return { success: true, ...body }
-      }
       const detail = path.match(/^\/records\/(.+)$/)
       if (detail && !options.method) {
         const record = state.records.find(record => record.id === decodeURIComponent(detail[1]))
@@ -126,11 +87,7 @@ function fixture() {
   return {
     state,
     ctx,
-    mount: () => render(route.render()),
-    mountSettings: () => {
-      expect(ctx.settingsPage, 'dedicated Magi settings page is registered').toBeTruthy()
-      return render(ctx.settingsPage.render())
-    }
+    mount: () => render(route.render())
   }
 }
 

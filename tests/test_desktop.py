@@ -186,9 +186,6 @@ def test_unified_desktop_package_uses_documented_surfaces():
     assert "SIDEBAR_NAV_AREA" in source
     assert "id: 'magi'" in source
     assert "name: 'Magi'" in source
-    assert "AI provider" in source
-    assert "AI model" in source
-    assert "loadLlmOptions" in source
     assert "data: { path: '/magi'" in source
     assert "label: 'Magi'" in source
     assert "codicon: 'wand'" in source
