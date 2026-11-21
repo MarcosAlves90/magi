@@ -29,4 +29,4 @@ config_schema:
     type: dict
     default: {}
     label: "AI model routing"
-    description: "Managed with the provider and model selectors on Magi's Settings page."
+    description: 'JSON object with "provider" and "model" strings. Set both to "" for Hermes defaults. Both must match the selected profile catalogue. Magi cannot set reasoning effort.'

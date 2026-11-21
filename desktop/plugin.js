@@ -2921,13 +2921,6 @@ export default {
       return parsed
     }
 
-    ctx.registerSettingsPage?.({
-      id: 'settings',
-      title: 'Magi',
-      icon: 'wand',
-      render: () => jsx(MagiSettingsPage, {})
-    })
-
     ctx.registerMany([
       {
         id: 'page',

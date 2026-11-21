@@ -30,7 +30,9 @@ Magi brings pending memory proposals and Hermes' durable `MEMORY.md` / `USER.md`
 
 ![Magi human-reviewed memory workflow](docs/magi-memory-workflow.png)
 
-Pending decisions and memory edits use Hermes' native safeguards. AI compaction can use the Hermes defaults or a provider/model selected from the active profile's configured lists in **Stored memory**; it never writes automatically.
+Pending decisions and memory edits use Hermes' native safeguards. AI compaction uses the profile's Hermes defaults unless a provider and model are configured in **Settings → Plugins → Magi**; it never writes automatically.
+
+The native settings page selects the profile independently of the active chat. Set **AI model routing** to a JSON object such as `{"provider":"openai","model":"example-model"}`, replacing both values with a provider and model available in that profile. Use `{"provider":"","model":""}` for Hermes defaults, including when clearing a legacy override. Incomplete or unavailable selections fall back to those defaults. The form does not currently offer dynamic provider/model lists ([Hermes issue](https://github.com/NousResearch/hermes-agent/issues/123204)). Magi cannot set reasoning effort independently: Hermes and the provider determine the effective setting ([Hermes issue](https://github.com/NousResearch/hermes-agent/issues/158448)).
 
 ## Get started
 

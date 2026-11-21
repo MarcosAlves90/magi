@@ -209,68 +209,6 @@ describe('Magi actual Desktop rendering and host SDK requests', () => {
     expect(screen.queryByRole('combobox', { name: 'AI model' })).toBeNull()
   })
 
-  it('renders the dedicated Magi settings page with profile-scoped configuration controls', async () => {
-    const { mountSettings } = fixture()
-    mountSettings()
-
-    expect(await screen.findByRole('heading', { name: 'Magi settings' })).toBeTruthy()
-    expect(screen.getByText('Configuring profile: test-profile')).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: 'Hermes profile' }).value).toContain('test-profile')
-    expect(await screen.findByRole('textbox', { name: 'Hermes home override' })).toBeTruthy()
-    expect(screen.getByRole('spinbutton', { name: 'Default page size' })).toBeTruthy()
-    expect(screen.getByRole('spinbutton', { name: 'Maximum page size' })).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: 'AI provider' })).toBeTruthy()
-    expect(screen.getByRole('combobox', { name: 'AI model' })).toBeTruthy()
-  })
-
-  it('rejects page sizes that the backend would alter', async () => {
-    const { mountSettings, state } = fixture()
-    mountSettings()
-    const user = userEvent.setup()
-    const size = await screen.findByRole('spinbutton', { name: 'Default page size' })
-    await user.clear(size)
-    await user.type(size, '-1')
-    expect(screen.getByRole('button', { name: 'Save AI settings' }).disabled).toBe(true)
-    expect(state.profileSettings['test-profile'].default_page_size).toBe(20)
-  })
-
-  it('loads and saves the selected profile catalog without switching the active profile', async () => {
-    const { mountSettings, state } = fixture()
-    mountSettings()
-    const user = userEvent.setup()
-    const profileSelect = await screen.findByRole('combobox', { name: 'Hermes profile' })
-    const otherProfile = screen.getByRole('option', { name: 'other-profile' })
-    await user.selectOptions(profileSelect, otherProfile.value)
-
-    await screen.findByText('Configuring profile: other-profile')
-    const providerSelect = screen.getByRole('combobox', { name: 'AI provider' })
-    await waitFor(() => expect(within(providerSelect).getByRole('option', { name: 'Anthropic' })).toBeTruthy())
-    expect(within(providerSelect).queryByRole('option', { name: 'OpenAI' })).toBeNull()
-    await user.selectOptions(providerSelect, 'anthropic')
-    const modelSelect = screen.getByRole('combobox', { name: 'AI model' })
-    expect(within(modelSelect).getByRole('option', { name: 'claude-profile' })).toBeTruthy()
-    expect(within(modelSelect).queryByRole('option', { name: 'gpt-active' })).toBeNull()
-
-    const pageSize = screen.getByRole('spinbutton', { name: 'Default page size' })
-    await user.clear(pageSize)
-    await user.type(pageSize, '30')
-    fireEvent.change(modelSelect, { target: { value: 'not-offered-by-profile' } })
-    expect(screen.getByRole('button', { name: 'Save AI settings' }).disabled).toBe(true)
-    expect(state.profileSettings['other-profile'].compaction_routing.provider).toBe('')
-
-    await user.selectOptions(modelSelect, 'claude-profile')
-    const save = screen.getByRole('button', { name: 'Save AI settings' })
-    await waitFor(() => expect(save.disabled).toBe(false))
-    await user.click(save)
-    await waitFor(() => expect(state.profileSettings['other-profile']).toMatchObject({
-      default_page_size: 30,
-      compaction_routing: { provider: 'anthropic', model: 'claude-profile' }
-    }))
-    expect(state.profileSettings['test-profile'].compaction_routing).toEqual({ provider: 'openai', model: 'gpt-active' })
-    expect(state.profileRequests.filter(request => request.params.profile === 'other-profile')
-      .every(request => request.route.connectionId === 'remote-connection' && request.route.profile === 'desktop-route' && request.route.targetProfile === 'other-profile')).toBe(true)
-    expect(host.state.profile.get()).toBe('test-profile')
-  })
 
   it('keeps non-obvious memory actions described by accessible tooltips instead of a side notice', async () => {
     const { mount } = fixture()
